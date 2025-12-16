@@ -1,0 +1,285 @@
+version: '3.8'
+
+services:
+  # ============== INFRASTRUCTURE ==============
+  postgres:
+    image: postgres:16-alpine
+    container_name: play-postgres
+    environment:
+      POSTGRES_USER: play
+      POSTGRES_PASSWORD: play123
+      POSTGRES_DB: play
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U play"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: play-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: play-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: play
+      RABBITMQ_DEFAULT_PASS: play123
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: play-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: playadmin
+      MINIO_ROOT_PASSWORD: playadmin123
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.6
+    container_name: play-meilisearch
+    environment:
+      MEILI_MASTER_KEY: play-search-key
+      MEILI_NO_ANALYTICS: true
+    ports:
+      - "7700:7700"
+    volumes:
+      - meilisearch_data:/meili_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    container_name: play-clickhouse
+    environment:
+      CLICKHOUSE_USER: play
+      CLICKHOUSE_PASSWORD: play123
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "8123:8123"  # HTTP
+      - "9009:9000"  # Native
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============== MICROSERVICES ==============
+  user-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: user-service
+    container_name: play-user-service
+    ports:
+      - "4002:4002"
+    environment:
+      PORT: 4002
+      DATABASE_URL: postgresql://play:play123@postgres:5432/play
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://play:play123@rabbitmq:5672
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  video-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: video-service
+    container_name: play-video-service
+    ports:
+      - "4003:4003"
+    environment:
+      PORT: 4003
+      DATABASE_URL: postgresql://play:play123@postgres:5432/play
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://play:play123@rabbitmq:5672
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  ingest-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: ingest-service
+    container_name: play-ingest-service
+    ports:
+      - "4004:4004"
+    environment:
+      PORT: 4004
+      DATABASE_URL: postgresql://play:play123@postgres:5432/play
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: playadmin
+      MINIO_SECRET_KEY: playadmin123
+      RABBITMQ_URL: amqp://play:play123@rabbitmq:5672
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  transcoder-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: transcoder-service
+    container_name: play-transcoder-service
+    ports:
+      - "4005:4005"
+    environment:
+      PORT: 4005
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: playadmin
+      MINIO_SECRET_KEY: playadmin123
+      RABBITMQ_URL: amqp://play:play123@rabbitmq:5672
+    depends_on:
+      minio:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  engagement-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: engagement-service
+    container_name: play-engagement-service
+    ports:
+      - "4006:4006"
+    environment:
+      PORT: 4006
+      DATABASE_URL: postgresql://play:play123@postgres:5432/play
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://play:play123@rabbitmq:5672
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  feed-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: feed-service
+    container_name: play-feed-service
+    ports:
+      - "4007:4007"
+    environment:
+      PORT: 4007
+      DATABASE_URL: postgresql://play:play123@postgres:5432/play
+      REDIS_URL: redis://redis:6379
+      CLICKHOUSE_URL: http://clickhouse:8123
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: notification-service
+    container_name: play-notification-service
+    ports:
+      - "4008:4008"
+    environment:
+      PORT: 4008
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://play:play123@rabbitmq:5672
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  search-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_NAME: search-service
+    container_name: play-search-service
+    ports:
+      - "4009:4009"
+    environment:
+      PORT: 4009
+      MEILISEARCH_URL: http://meilisearch:7700
+      MEILISEARCH_KEY: play-search-key
+      RABBITMQ_URL: amqp://play:play123@rabbitmq:5672
+    depends_on:
+      meilisearch:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  minio_data:
+  meilisearch_data:
+  clickhouse_data:

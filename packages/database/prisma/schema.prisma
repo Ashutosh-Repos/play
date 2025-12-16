@@ -1,0 +1,115 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model - basic info, auth handled by NextAuth
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  username  String   @unique
+  name      String?
+  avatarUrl String?
+  bio       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  videos       Video[]
+  comments     Comment[]
+  likes        Like[]
+  subscriptions Subscription[] @relation("subscriber")
+  subscribers   Subscription[] @relation("channel")
+
+  @@map("users")
+}
+
+// Video model
+model Video {
+  id           String      @id @default(cuid())
+  title        String
+  description  String?
+  userId       String
+  status       VideoStatus @default(PENDING)
+  duration     Int?        // in seconds
+  thumbnailUrl String?
+  videoUrl     String?     // HLS manifest URL
+  originalUrl  String?     // Original uploaded file
+  views        Int         @default(0)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  publishedAt  DateTime?
+
+  // Relations
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comments Comment[]
+  likes    Like[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("videos")
+}
+
+enum VideoStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+// Comments
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  userId    String
+  videoId   String
+  parentId  String?  // For replies
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video   Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  parent  Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies Comment[] @relation("CommentReplies")
+
+  @@index([videoId])
+  @@index([userId])
+  @@map("comments")
+}
+
+// Likes
+model Like {
+  id        String   @id @default(cuid())
+  userId    String
+  videoId   String
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, videoId])
+  @@index([videoId])
+  @@map("likes")
+}
+
+// Subscriptions
+model Subscription {
+  id           String   @id @default(cuid())
+  subscriberId String
+  channelId    String
+  createdAt    DateTime @default(now())
+
+  subscriber User @relation("subscriber", fields: [subscriberId], references: [id], onDelete: Cascade)
+  channel    User @relation("channel", fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriberId, channelId])
+  @@index([channelId])
+  @@map("subscriptions")
+}
