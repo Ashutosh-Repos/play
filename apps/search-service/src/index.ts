@@ -1,6 +1,45 @@
 import express from "express";
+import cors from "cors";
+import { configureMeili } from "./lib/meili.js";
+import { connectRabbitMQ } from "./lib/rabbitmq.js";
+import { startVideoConsumer } from "./consumers/video.js";
+
 const app = express();
 const PORT = process.env.PORT || 4009;
+
+app.use(cors());
 app.use(express.json());
-app.get("/health", (_req, res) => res.json({ status: "ok", service: "search-service" }));
-app.listen(PORT, () => console.log(`search-service running on port ${PORT}`));
+
+import searchRouter from "./routes/search.js";
+
+app.use("/api", searchRouter);
+
+// Health check
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", service: "search-service" });
+});
+
+// Start server
+const server = app.listen(PORT, async () => {
+  console.log(`🚀 Search Service running on port ${PORT}`);
+  
+  // Configure Search Engine on startup
+  await configureMeili();
+  
+  // Start Consumers
+  try {
+      const channel = await connectRabbitMQ();
+      await startVideoConsumer(channel);
+  } catch (err) {
+      console.log("Failed to start consumers", err);
+  }
+});
+
+// Graceful shutdown
+process.on("SIGTERM", () => {
+  console.log("SIGTERM received");
+  server.close(() => {
+    console.log("Server closed");
+    process.exit(0);
+  });
+});

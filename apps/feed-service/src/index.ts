@@ -1,6 +1,39 @@
 import express from "express";
+import cors from "cors";
+import { connectRabbitMQ } from "./lib/rabbitmq.js";
+import { startHistoryConsumer } from "./consumers/history.js";
+import { redis } from "./lib/redis.js";
+import { startTrendingJob } from "./jobs/trending.js";
+
 const app = express();
-const PORT = process.env.PORT || 4007;
+const PORT = process.env.PORT || 4010;
+
+app.use(cors());
 app.use(express.json());
-app.get("/health", (_req, res) => res.json({ status: "ok", service: "feed-service" }));
-app.listen(PORT, () => console.log(`feed-service running on port ${PORT}`));
+
+import feedRoutes from "./routes/feed.js";
+
+app.use("/api/feed", feedRoutes);
+
+app.get("/health", (req, res) => {
+  res.json({ status: "OK", service: "feed-service" });
+});
+
+// Start Server
+app.listen(PORT, async () => {
+  console.log(`🚀 Feed Service running on port ${PORT}`);
+
+  // Connect to Infra
+  try {
+      const channel = await connectRabbitMQ();
+      await startHistoryConsumer(channel);
+      
+      // Check Redis
+      await redis.ping();
+      
+      // Start Background Jobs
+      startTrendingJob();
+  } catch (err) {
+      console.error("Failed to initialize feed service infra:", err);
+  }
+});

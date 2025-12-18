@@ -2,27 +2,31 @@
   "name": "feed-service",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
-  "main": "./src/index.ts",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "check-types": "tsc --noEmit",
-    "lint": "eslint . --max-warnings 0"
+    "lint": "eslint ."
   },
   "dependencies": {
-    "@repo/common": "workspace:*",
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "amqplib": "^0.10.4",
+    "ioredis": "^5.4.1",
     "@repo/database": "workspace:*",
     "@repo/events": "workspace:*",
-    "express": "^4.21.0"
+    "@repo/config": "workspace:*",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
+    "@types/node": "^20.12.7",
     "@types/express": "^4.17.21",
-    "@types/node": "^22.15.3",
-    "tsx": "^4.19.0",
+    "@types/cors": "^2.8.17",
+    "@types/amqplib": "^0.10.5",
+    "tsx": "^4.7.2",
     "typescript": "5.9.2"
   }
 }
