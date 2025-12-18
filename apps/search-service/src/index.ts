@@ -1,3 +1,8 @@
+import { config } from "dotenv";
+import { join } from "path";
+
+// Load .env from monorepo root
+config({ path: join(process.cwd(), "../../..env") });
 import express from "express";
 import cors from "cors";
 import { configureMeili } from "./lib/meili.js";

@@ -44,9 +44,9 @@ const serverEnvSchema = z.object({
   CLICKHOUSE_PASSWORD: z.string().default("play123"),
 
   // JWT / Auth
-  JWT_SECRET: z.string().min(16).default("dev-jwt-secret-change-in-prod"),
+  JWT_SECRET: z.string().min(16).default("VbyFelqTxFcsNxBWSyvptR6Sf2RPKtxl9eLVHex1lIk="),
   JWT_EXPIRES_IN: z.string().default("7d"),
-  NEXTAUTH_SECRET: z.string().default("dev-nextauth-secret-change-in-prod"),
+  NEXTAUTH_SECRET: z.string().default("VbyFelqTxFcsNxBWSyvptR6Sf2RPKtxl9eLVHex1lIk="),
   NEXTAUTH_URL: z.string().url().default("http://localhost:3000"),
 
   // Service ports (optional, services can use defaults)

@@ -18,30 +18,39 @@ export const initSocket = (httpServer: HttpServer) => {
     }
   });
 
-  // Security Middleware
+  // Security Middleware - Verify JWT Token
   io.use((socket, next) => {
-      const token = socket.handshake.query.token as string;
-      // Also check headers for flexibility
-      // const token = socket.handshake.auth.token || socket.handshake.query.token;
+      // Accept token from query params or auth object
+      const token = socket.handshake.auth.token || socket.handshake.query.token as string;
 
       if (!token) {
           return next(new Error("Authentication error: No token provided"));
       }
 
       try {
-          // Verify JWT
-          const secret = process.env.JWT_SECRET || "supersecret"; // Should import from @repo/config
+          // Verify JWT (use same secret as microservices)
+          const secret = process.env.JWT_SECRET || process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
+          if (!secret) {
+              console.error("JWT_SECRET not configured for WebSocket auth");
+              return next(new Error("Server configuration error"));
+          }
+
           const decoded = jwt.verify(token, secret) as any;
           
-          if (!decoded || !decoded.userId) {
-              return next(new Error("Authentication error: Invalid token"));
+          // Next-Auth stores user in decoded.user, while direct JWT might use decoded.sub
+          const userId = decoded.user?.id || decoded.sub || decoded.userId;
+          
+          if (!userId) {
+              return next(new Error("Authentication error: Invalid token payload"));
           }
           
-          // Attach user to socket
-          socket.data.userId = decoded.userId;
+          // Attach user info to socket
+          socket.data.userId = userId;
+          socket.data.user = decoded.user || { id: userId };
           next();
       } catch (err) {
-          next(new Error("Authentication error"));
+          console.error("WebSocket auth error:", err);
+          next(new Error("Authentication error: Invalid or expired token"));
       }
   });
 

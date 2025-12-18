@@ -1,4 +1,15 @@
 // Video Service - Entry point
+import { config as dotenvConfig } from "dotenv";
+import { join } from "path";
+
+// Load .env from monorepo root
+dotenvConfig({ path: join(process.cwd(), "../../.env") });
+
+// BigInt JSON serialization fix (viewCount is BigInt)
+(BigInt.prototype as any).toJSON = function() {
+  return this.toString();
+};
+
 import express from "express";
 import http from "http";
 import cors from "cors";

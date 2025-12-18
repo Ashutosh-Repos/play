@@ -160,8 +160,8 @@ router.get("/:id", optionalAuthMiddleware(), async (req, res) => {
     // Filter out private videos for non-owners
     const isOwner = playlist.userId === userId;
     const videos = playlist.videos
-      .filter((pv) => isOwner || pv.video.visibility === "PUBLIC" || pv.video.visibility === "UNLISTED")
-      .map((pv) => ({
+      .filter((pv: typeof playlist.videos[0]) => isOwner || pv.video.visibility === "PUBLIC" || pv.video.visibility === "UNLISTED")
+      .map((pv: typeof playlist.videos[0]) => ({
         position: pv.position,
         addedAt: pv.addedAt,
         ...pv.video,

@@ -1,3 +1,14 @@
+import { config } from "dotenv";
+import { join } from "path";
+
+// Load .env from monorepo root
+config({ path: join(process.cwd(), "../../.env") });
+
+// BigInt JSON serialization fix
+(BigInt.prototype as any).toJSON = function() {
+  return this.toString();
+};
+
 import express from "express";
 import cors from "cors";
 import { connectRabbitMQ } from "./lib/rabbitmq.js";

@@ -19,6 +19,9 @@ const s3Client = new S3Client({
 
 const VIDEO_BUCKET = serverEnv.MINIO_BUCKET;
 
+/**
+ * Download video from MinIO/S3
+ */
 export const downloadVideo = async (fileKey: string, downloadPath: string): Promise<void> => {
   console.log(`Downloading ${fileKey} to ${downloadPath}...`);
   
@@ -40,47 +43,100 @@ export const downloadVideo = async (fileKey: string, downloadPath: string): Prom
   console.log(`Downloaded ${fileKey}`);
 };
 
-export const uploadArtifacts = async (videoId: string, artifactDir: string): Promise<string[]> => {
+/**
+ * Get content type based on file extension
+ */
+function getContentType(filename: string): string {
+  if (filename.endsWith(".m3u8")) return "application/vnd.apple.mpegurl";
+  if (filename.endsWith(".ts")) return "video/MP2T";
+  if (filename.endsWith(".png")) return "image/png";
+  if (filename.endsWith(".jpg") || filename.endsWith(".jpeg")) return "image/jpeg";
+  if (filename.endsWith(".webp")) return "image/webp";
+  return "application/octet-stream";
+}
+
+/**
+ * Upload a single file to MinIO/S3
+ */
+async function uploadFile(localPath: string, s3Key: string): Promise<string> {
+  const fileStream = fs.createReadStream(localPath);
+  const contentType = getContentType(path.basename(localPath));
+  
+  const upload = new Upload({
+    client: s3Client,
+    params: {
+      Bucket: VIDEO_BUCKET,
+      Key: s3Key,
+      Body: fileStream,
+      ContentType: contentType,
+    },
+  });
+
+  await upload.done();
+  return s3Key;
+}
+
+/**
+ * Upload thumbnails only - called early in the pipeline
+ * Returns list of S3 keys for uploaded thumbnails
+ */
+export const uploadThumbnails = async (
+  videoId: string, 
+  artifactDir: string, 
+  thumbnailFilenames: string[]
+): Promise<string[]> => {
+  console.log(`Uploading ${thumbnailFilenames.length} thumbnails for ${videoId}...`);
+  
+  const uploadedKeys: string[] = [];
+
+  for (const filename of thumbnailFilenames) {
+    const filePath = path.join(artifactDir, filename);
+    
+    // Skip if file doesn't exist
+    if (!await fs.pathExists(filePath)) {
+      console.warn(`Thumbnail not found: ${filePath}`);
+      continue;
+    }
+    
+    const key = `videos/${videoId}/hls/${filename}`;
+    await uploadFile(filePath, key);
+    uploadedKeys.push(key);
+  }
+
+  console.log(`Uploaded ${uploadedKeys.length} thumbnails for ${videoId}`);
+  return uploadedKeys;
+};
+
+/**
+ * Upload artifacts with optional extension filter
+ * Used to upload HLS files after transcoding (excluding already-uploaded thumbnails)
+ */
+export const uploadArtifacts = async (
+  videoId: string, 
+  artifactDir: string,
+  extensionFilter?: string[]  // e.g. [".m3u8", ".ts"] to only upload HLS files
+): Promise<string[]> => {
   console.log(`Uploading artifacts for ${videoId} from ${artifactDir}...`);
   
   const files = await fs.readdir(artifactDir);
-  const uploadedUrls: string[] = [];
+  const uploadedKeys: string[] = [];
 
   for (const file of files) {
+    // Apply extension filter if provided
+    if (extensionFilter && extensionFilter.length > 0) {
+      const ext = path.extname(file).toLowerCase();
+      if (!extensionFilter.includes(ext)) {
+        continue; // Skip files not matching filter
+      }
+    }
+    
     const filePath = path.join(artifactDir, file);
-    const fileStream = fs.createReadStream(filePath);
-    
-    // Key structure: videos/{videoId}/hls/{filename}
-    // Note: We are keeping the 'hls' prefix for legacy reasons or we could rename to 'processed'
-    // But since the plan mentioned videos/<id>/hls/, we stick to it or generalize.
-    // Let's generalize to just videos/{videoId}/{filename} if we want, OR keep it under hls/ for now.
-    // IMPORTANT: video-service expects hlsPlaylistUrl.
-    // If we put thumbnails in the same dir, they will be videos/{videoId}/hls/thumbnail-1.png
-    // This is fine.
-    
     const key = `videos/${videoId}/hls/${file}`;
     
-    // Determine content type
-    let contentType = "application/octet-stream";
-    if (file.endsWith(".m3u8")) contentType = "application/vnd.apple.mpegurl";
-    if (file.endsWith(".ts")) contentType = "video/MP2T";
-    if (file.endsWith(".png")) contentType = "image/png";
-    if (file.endsWith(".jpg") || file.endsWith(".jpeg")) contentType = "image/jpeg";
-
-    const upload = new Upload({
-      client: s3Client,
-      params: {
-        Bucket: VIDEO_BUCKET,
-        Key: key,
-        Body: fileStream,
-        ContentType: contentType,
-      },
-    });
-
-    await upload.done();
-    uploadedUrls.push(key);
+    await uploadFile(filePath, key);
+    uploadedKeys.push(key);
   }
 
-  console.log(`Uploaded ${files.length} artifacts for ${videoId}`);
-  return uploadedUrls;
+  console.log(`Uploaded ${uploadedKeys.length} artifacts for ${videoId}`);
+  return uploadedKeys;
 };

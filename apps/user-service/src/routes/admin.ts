@@ -2,7 +2,8 @@
 import { Router } from "express";
 import { prisma } from "@repo/database";
 import { authMiddleware, requireRole } from "@repo/common";
-import { updateUserStatusSchema, verifyChannelSchema } from "../schemas.js";
+import { verifyChannelSchema } from "@repo/validation";
+import { updateUserStatusSchema } from "../schemas.js";
 import { emitUserSuspended, emitChannelVerified } from "../events/publisher.js";
 
 const router = Router();

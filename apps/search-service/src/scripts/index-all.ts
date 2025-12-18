@@ -1,5 +1,4 @@
-import db from "@repo/database";
-const { prisma } = db;
+import { prisma } from "@repo/database";
 import { meili, INDEX_VIDEOS, configureMeili } from "../lib/meili.js";
 
 async function main() {

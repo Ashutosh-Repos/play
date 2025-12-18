@@ -64,20 +64,35 @@ export async function flushViewsToDB() {
       const count = parseInt(countStr || "0", 10);
 
       if (count > 0) {
-        // 4. Update Postgres FIRST
-        const updatedVideo = await prisma.video.update({
+        // 4. Update Postgres FIRST (use updateMany to avoid P2025 if video deleted)
+        const updateResult = await prisma.video.updateMany({
           where: { id: videoId },
           data: {
             viewCount: { increment: count },
           },
         });
 
-        // Emit updated stats for Search Service
-        emitVideoStats(videoId, { viewCount: Number(updatedVideo.viewCount) });
+        // Only emit and decrement if we actually updated something
+        if (updateResult.count > 0) {
+          // Get the updated video for emitting stats
+          const updatedVideo = await prisma.video.findUnique({
+            where: { id: videoId },
+            select: { viewCount: true },
+          });
+          
+          if (updatedVideo) {
+            // Emit updated stats for Search Service
+            emitVideoStats(videoId, { viewCount: Number(updatedVideo.viewCount) });
+          }
 
-        // 5. Decrement Redis AFTER success
-        // If this fails, we effectively double-count next time (better than data loss)
-        await redis.decrby(key, count);
+          // 5. Decrement Redis AFTER success
+          // If this fails, we effectively double-count next time (better than data loss)
+          await redis.decrby(key, count);
+        } else {
+          // Video was deleted, clean up Redis
+          console.log(`Video ${videoId} not found, cleaning up stale view count`);
+          await redis.del(key);
+        }
       }
       
       // Remove from dirty set

@@ -26,7 +26,7 @@ router.get("/sessions", authMiddleware(), async (req, res) => {
     });
 
     // Mark current session
-    const sessionsWithCurrent = sessions.map((s) => ({
+    const sessionsWithCurrent = sessions.map((s: typeof sessions[0]) => ({
       ...s,
       current: s.id === currentTokenId,
     }));
@@ -176,7 +176,7 @@ router.delete("/connections/:provider", authMiddleware(), async (req, res) => {
       });
     }
 
-    const connection = user.identities.find((i) => i.provider.toLowerCase() === provider.toLowerCase());
+    const connection = user.identities.find((i: typeof user.identities[0]) => i.provider.toLowerCase() === provider.toLowerCase());
     if (!connection) {
       return res.status(404).json({
         success: false,

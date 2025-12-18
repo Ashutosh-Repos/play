@@ -70,9 +70,8 @@ export const startVideoConsumer = async (channel: Channel) => {
       channel.ack(msg);
     } catch (error) {
       console.error("Error processing event:", error);
-      // Nack without requeue if it's a permanent error, or requeue if transient.
-      // For now, nack without requeue to avoid loop
-      channel.nack(msg, false, false);
+      // Nack with requeue to retry on transient errors (e.g. Meilisearch unavailable)
+      channel.nack(msg, false, true);
     }
   });
 };

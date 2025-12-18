@@ -32,7 +32,7 @@ export async function cleanupStaleUploads(): Promise<number> {
   // Mark as FAILED
   await prisma.video.updateMany({
     where: {
-      id: { in: staleUploads.map((v) => v.id) },
+      id: { in: staleUploads.map((v: typeof staleUploads[0]) => v.id) },
       processingStatus: "UPLOADING",
     },
     data: {

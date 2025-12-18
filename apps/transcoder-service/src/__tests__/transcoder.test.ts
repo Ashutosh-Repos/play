@@ -76,6 +76,7 @@ describe('Transcoder Logic', () => {
     await transcodeVideo({
       inputPath: 'input.mp4',
       outputDir: '/out',
+      sourceHeight: 1080,
     });
 
     expect(mockFfmpegInstance.output).toHaveBeenCalledTimes(4); // 360, 480, 720, 1080
@@ -92,6 +93,7 @@ describe('Transcoder Logic', () => {
     await transcodeVideo({
       inputPath: 'input.mp4',
       outputDir: '/out',
+      sourceHeight: 1080,
     });
 
     expect(fs.default.writeFileSync).toHaveBeenCalledWith(
@@ -110,6 +112,7 @@ describe('Transcoder Logic', () => {
     await transcodeVideo({
       inputPath: 'input.mp4',
       outputDir: '/out',
+      sourceHeight: 1080,
       onProgress,
     });
 

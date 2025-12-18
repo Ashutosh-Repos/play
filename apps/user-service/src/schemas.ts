@@ -1,24 +1,4 @@
 // Zod validation schemas for user-service
-// Re-exports from @repo/validation for convenience + local extensions
-
-// Re-export shared schemas
-export {
-  // Channel
-  createChannelSchema,
-  updateChannelSchema,
-  verifyChannelSchema,
-  type CreateChannelInput,
-  type UpdateChannelInput,
-  type VerifyChannelInput,
-  // Common
-  paginationSchema,
-  type PaginationInput,
-  // Enums
-  SubscriptionNotificationLevel,
-  UserStatus,
-  UserRole,
-} from "@repo/validation";
-
 import { z } from "zod";
 
 // ==================== User Profile (local) ====================

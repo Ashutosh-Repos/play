@@ -1,2 +1,2 @@
-// @repo/validation - Shared Zod schemas
-export * from "./schemas";
+// @repo/validation - Re-export all schemas
+export * from "./schemas/index";

@@ -46,17 +46,30 @@ export const startNotificationConsumer = async (channel: Channel) => {
       channel.ack(msg);
     } catch (error) {
       console.error("Error processing notification:", error);
-      channel.nack(msg, false, false);
+      // Requeue the message for retry if it's a transient error
+      // Ideally check error type. For now, requeue everything except validation errors.
+      channel.nack(msg, false, true);
     }
   });
 };
 
+import { VideoPublishedSchema, CommentCreatedSchema } from "@repo/events";
+
+// ...
+
 // Handlers
-async function handleVideoPublished(payload: any) {
-    const { videoId, channelId, title } = payload;
+async function handleVideoPublished(rawPayload: any) {
+    // Validate Payload
+    const result = VideoPublishedSchema.safeParse(rawPayload);
+    if (!result.success) {
+        console.error("Invalid VideoPublished Payload:", result.error);
+        return; // Don't process invalid events
+    }
     
-    // 1. Get Channel Info (for notification message)
-    if (!channelId) return; // Guard clause for basic typing safety
+    const { videoId, channelId, title } = result.data;
+    
+    // 1. Get Channel Info 
+    // ...
     
     const channel = await prisma.channel.findUnique({
         where: { id: channelId },
@@ -86,7 +99,7 @@ async function handleVideoPublished(payload: any) {
     for (let i = 0; i < subs.length; i += BATCH_SIZE) {
         const batch = subs.slice(i, i + BATCH_SIZE);
         
-        await Promise.all(batch.map(async (sub) => {
+        await Promise.all(batch.map(async (sub: typeof batch[0]) => {
             try {
                 // Idempotency Check: Don't insert if duplicates exist for this video+user+type
                 // This is a "read-before-write" check. Ideally, DB unique constraint is better.
@@ -123,8 +136,14 @@ async function handleVideoPublished(payload: any) {
     }
 }
 
-async function handleCommentCreated(payload: any) {
-    const { commentId, videoId, userId, content } = payload;
+async function handleCommentCreated(rawPayload: any) {
+    const result = CommentCreatedSchema.safeParse(rawPayload);
+    if (!result.success) {
+        console.error("Invalid CommentCreated Payload:", result.error);
+        return;
+    }
+
+    const { commentId, videoId, userId, content } = result.data;
     
     // 1. Get Video Owner
     const video = await prisma.video.findUnique({

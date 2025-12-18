@@ -103,7 +103,7 @@ export const listComments = async (req: Request, res: Response) => {
     });
 
     // Sanitize tombstones
-    const sanitized = comments.map(c => {
+    const sanitized = comments.map((c: typeof comments[0]) => {
         if (c.status === "REMOVED") {
             return {
                 ...c,
@@ -144,7 +144,7 @@ export const listReplies = async (req: Request, res: Response) => {
             skip: (Number(page) - 1) * Number(limit),
         });
 
-        const sanitized = replies.map(c => {
+        const sanitized = replies.map((c: typeof replies[0]) => {
             if (c.status === "REMOVED") {
                 return {
                     ...c,

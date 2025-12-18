@@ -31,7 +31,7 @@ export const getTrendingFeed = async (req: Request, res: Response) => {
                 where: { id: { in: cachedIds }, visibility: "PUBLIC" },
                 include: { channel: true }
             });
-            const map = new Map(unordered.map(v => [v.id, v]));
+            const map = new Map(unordered.map((v: typeof unordered[0]) => [v.id, v]));
             videos = cachedIds.map(id => map.get(id)).filter((v): v is typeof unordered[0] => !!v);
         } else if (start === 0) {
              // Fallback only if first page
@@ -60,12 +60,18 @@ export const getSubscriptionFeed = async (req: Request, res: Response) => {
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     try {
+        // Fetch a reasonable max number of subscriptions (prevent loading 10k+ channel IDs into memory)
+        // Users with more than 500 subscriptions will only see videos from their first 500
+        const MAX_SUBSCRIPTIONS = 500;
+        
         const subscriptions = await prisma.subscription.findMany({
             where: { subscriberId: userId },
-            select: { channelId: true }
+            select: { channelId: true },
+            take: MAX_SUBSCRIPTIONS,
+            orderBy: { subscribedAt: "desc" } // Most recent subscriptions first
         });
 
-        const channelIds = subscriptions.map(s => s.channelId);
+        const channelIds = subscriptions.map((s: { channelId: string }) => s.channelId);
 
         if (channelIds.length === 0) {
             return res.json({ videos: [], nextCursor: null });
@@ -132,7 +138,7 @@ export const getHistoryFeed = async (req: Request, res: Response) => {
         }
 
         // Flatten structure
-        const videos = history.map(h => ({
+        const videos = history.map((h: typeof history[0]) => ({
             ...h.video,
             watchedAt: h.lastWatchedAt,
             watchCount: h.watchCount

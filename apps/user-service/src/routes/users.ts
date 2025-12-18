@@ -2,7 +2,7 @@
 import { Router } from "express";
 import { prisma } from "@repo/database";
 import { authMiddleware } from "@repo/common";
-import { updateProfileSchema } from "../schemas.js";
+import { updateProfileSchema, updateNotificationSettingsSchema } from "../schemas.js";
 import { emitUserUpdated } from "../events/publisher.js";
 
 const router = Router();

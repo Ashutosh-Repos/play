@@ -1,3 +1,62 @@
+import { VideoPublishedPayload, CommentCreatedPayload, VideoLikedPayload } from "./schemas.js";
+
+// ... (other imports or code)
+
+export interface VideoPublishedEvent {
+  type: "video.published";
+  payload: VideoPublishedPayload;
+}
+
+export interface CommentCreatedEvent {
+  type: "comment.created";
+  payload: CommentCreatedPayload;
+}
+
+export interface VideoLikedEvent {
+  type: "video.liked";
+  payload: VideoLikedPayload;
+}
+
+// Notification events
+export interface NotificationEvent {
+  type: "notification.send";
+  payload: {
+    userId: string;
+    notificationType: string;
+    title: string;
+    body: string;
+    data?: Record<string, unknown>;
+  };
+}
+
+// Union type of all events
+export type AppEvent =
+  | VideoUploadedEvent
+  | VideoTranscodingStartedEvent
+  | VideoTranscodingCompletedEvent
+  | VideoTranscodingFailedEvent
+  | TranscodeProgressEvent
+  | TranscodeThumbnailsEvent
+  | TranscodeCompletedEvent
+  | TranscodeFailedEvent
+  | VideoPublishedEvent
+  | VideoDeletedEvent
+  | UserCreatedEvent
+  | UserUpdatedEvent
+  | UserDeletedEvent
+  | UserSuspendedEvent
+  | UserRestoredEvent
+  | ChannelCreatedEvent
+  | ChannelUpdatedEvent
+  | ChannelVerifiedEvent
+  | ChannelDeletedEvent
+  | SubscriptionCreatedEvent
+  | SubscriptionDeletedEvent
+  | VideoViewedEvent
+  | VideoLikedEvent
+  | CommentCreatedEvent
+  | NotificationEvent;
+
 // Event type definitions for RabbitMQ
 
 // Video events
@@ -88,15 +147,7 @@ export interface VideoTranscodingFailedEvent {
   };
 }
 
-export interface VideoPublishedEvent {
-  type: "video.published";
-  payload: {
-    videoId: string;
-    channelId: string;
-    title: string;
-    publishedAt: string;
-  };
-}
+// VideoPublishedEvent imported from schemas
 
 export interface VideoDeletedEvent {
   type: "video.deleted";
@@ -220,62 +271,4 @@ export interface VideoViewedEvent {
   };
 }
 
-export interface VideoLikedEvent {
-  type: "video.liked";
-  payload: {
-    videoId: string;
-    userId: string;
-    likedAt: string;
-  };
-}
 
-export interface CommentCreatedEvent {
-  type: "comment.created";
-  payload: {
-    commentId: string;
-    videoId: string;
-    userId: string;
-    content: string;
-    createdAt: string;
-  };
-}
-
-// Notification events
-export interface NotificationEvent {
-  type: "notification.send";
-  payload: {
-    userId: string;
-    notificationType: string;
-    title: string;
-    body: string;
-    data?: Record<string, unknown>;
-  };
-}
-
-// Union type of all events
-export type AppEvent =
-  | VideoUploadedEvent
-  | VideoTranscodingStartedEvent
-  | VideoTranscodingCompletedEvent
-  | VideoTranscodingFailedEvent
-  | TranscodeProgressEvent
-  | TranscodeThumbnailsEvent
-  | TranscodeCompletedEvent
-  | TranscodeFailedEvent
-  | VideoPublishedEvent
-  | VideoDeletedEvent
-  | UserCreatedEvent
-  | UserUpdatedEvent
-  | UserDeletedEvent
-  | UserSuspendedEvent
-  | UserRestoredEvent
-  | ChannelCreatedEvent
-  | ChannelUpdatedEvent
-  | ChannelVerifiedEvent
-  | ChannelDeletedEvent
-  | SubscriptionCreatedEvent
-  | SubscriptionDeletedEvent
-  | VideoViewedEvent
-  | VideoLikedEvent
-  | CommentCreatedEvent
-  | NotificationEvent;

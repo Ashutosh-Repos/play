@@ -1,25 +1,30 @@
-import { Worker, Job } from "bullmq";
+import { Worker, Job, UnrecoverableError } from "bullmq";
 import { Redis } from "ioredis";
 import path from "path";
 import fs from "fs-extra";
-import { downloadVideo, uploadArtifacts } from "./storage.js";
-import { transcodeVideo, getVideoMetadata, generateThumbnails } from "./transcoder.js";
-import { TranscodeJobData } from "./queue.js";
+import { downloadVideo, uploadArtifacts, uploadThumbnails } from "./storage.js";
+import { transcodeVideo, getVideoMetadata, generateThumbnails, getTargetResolutions } from "./transcoder.js";
+import { TranscodeJobData, JOB_TIMEOUT_MS } from "./queue.js";
 import { EXCHANGES } from "@repo/events";
-import { Channel, connect } from "amqplib";
+import amqp, { Channel } from "amqplib";
 
 const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
-const RABBITMQ_URL = process.env.RABBITMQ_URL || "amqp://guest:guest@localhost:5672";
+
+// Read at runtime, not module load time
+const getRabbitMQUrl = () => process.env.RABBITMQ_URL || "amqp://guest:guest@localhost:5672";
 
 let rabbitChannel: Channel;
+let rabbitConnection: any = null;  // amqplib.Connection
+let worker: Worker<TranscodeJobData> | null = null;
+let isShuttingDown = false;
 
 // Initialize separate RabbitMQ publisher for the worker
 const initRabbitMQ = async () => {
   try {
-    const connection = await connect(RABBITMQ_URL);
-    rabbitChannel = await connection.createChannel();
+    rabbitConnection = await amqp.connect(getRabbitMQUrl());
+    rabbitChannel = await rabbitConnection.createChannel();
     await rabbitChannel.assertExchange(EXCHANGES.VIDEO, "topic", { durable: true });
-    console.log("Worker RabbitMQ publisher initialized");
+    console.log("✅ Worker RabbitMQ publisher initialized");
   } catch (err) {
     console.error("Failed to connect Worker RabbitMQ:", err);
   }
@@ -40,7 +45,7 @@ export const startWorker = async () => {
 
   console.log("🚀 Starting transcoding worker...");
 
-  new Worker<TranscodeJobData>(
+  worker = new Worker<TranscodeJobData>(
     "transcoding",
     async (job: Job<TranscodeJobData>) => {
       const { videoId, fileName } = job.data;
@@ -51,7 +56,7 @@ export const startWorker = async () => {
       const outputDir = path.join(workDir, "output");
 
       try {
-        // 1. Notify Started (using progress event for now or add started handler in video-service)
+        // 1. Notify Started
         publishEvent(EXCHANGES.VIDEO, "transcode.progress", {
           type: "transcode.progress",
           payload: {
@@ -74,78 +79,53 @@ export const startWorker = async () => {
           },
         });
 
-        // 2.5 Probe Metadata
+        // 3. Probe Metadata
         console.log(`Probing video ${videoId}...`);
         const metadata = await getVideoMetadata(inputPath);
         console.log("Metadata:", metadata);
+        
+        // Check minimum resolution - FATAL error if too low
+        if (metadata.height < 360) {
+          throw new UnrecoverableError(
+            `Video resolution too low (${metadata.width}x${metadata.height}). Minimum required: 640x360.`
+          );
+        }
+        
+        // Check if we can produce any resolutions
+        const targetResolutions = getTargetResolutions(metadata.height);
+        if (targetResolutions.length === 0) {
+          throw new UnrecoverableError(`Cannot produce any resolutions for height ${metadata.height}`);
+        }
 
-        // 3. Transcode
-        await job.updateProgress({ step: "transcoding", progress: 20 });
-        
-        // Generate Thumbnails
+        // 4. Generate Thumbnails (before transcoding)
+        await job.updateProgress({ step: "thumbnails", progress: 20 });
         console.log(`Generating thumbnails for ${videoId}...`);
-        const generatedThumbnails = await generateThumbnails(inputPath, outputDir);
+        const generatedThumbnails = await generateThumbnails(inputPath, outputDir, metadata.height);
         
-        // Notify Thumbnails Ready (for user selection)
-        // We need to upload them first to get valid URLs?
-        // Actually generateThumbnails returns local paths. We need to upload them.
-        // Wait, uploadArtifacts uploads the whole directory at the end.
-        // To support "real-time" thumbnail selection, we should upload thumbnails IMMEDIATELY.
-        
-        // Helper to upload specific files
-        const thumbnailFiles = generatedThumbnails.map(p => path.basename(p));
-        // We need to upload just these files.
-        // For efficiency, we can just let uploadArtifacts handle it at the end?
-        // User said: "when thumbnail got processed... it gives thumbnail urls... to choose"
-        // Implicitly implies availability BEFORE completion?
-        // If we wait for completion, the user can choose then. 
-        // But usually "progress" implies while it's processing.
-        // Let's assume we want to upload thumbnails immediately.
-        
-        // Since `uploadArtifacts` uploads the whole generic "outputDir", 
-        // we can probably call a specialized upload for thumbnails here or just wait?
-        // Given complexity of partial uploads, let's Stick to the plan:
-        // 1. Generate.
-        // 2. Upload Thumbnails ONLY.
-        // 3. Emit event.
-        // 4. Continue transcoding.
-        
-        // BUT `uploadArtifacts` in `storage.ts` might be simple. Let's assume we can upload.
-        // For now, to avoid major refactor of storage, I will just emit the event with *predicted* keys 
-        // OR better, shift thumbnail upload here.
-        
-        // Actually, `uploadArtifacts` might take a filter?
-        // Let's Just emit the event assuming they will be uploaded or simply add a TODO.
-        // Wait, if I emit URLs that don't exist in S3 yet, the client receives 404s.
-        // So I MUST upload them.
-        
-        // I will import `uploadFile` from storage if available or `s3Client`.
-        // storage.ts exports `uploadArtifacts`. 
-        // Let's modify `storage.ts` or just use `uploadArtifacts` to upload everything so far (just thumbnails).
-        // `uploadArtifacts` uploads *everything* in outputDir. 
-        // At this point, outputDir ONLY has thumbnails. So it is safe to call it!
-        
-        const uploadedThumbnails = await uploadArtifacts(videoId, outputDir);
-        
-        const thumbUrls = uploadedThumbnails.filter(f => f.endsWith(".png") || f.endsWith(".jpg"));
+        // Upload thumbnails immediately so users can preview while transcoding
+        const uploadedThumbnails = await uploadThumbnails(videoId, outputDir, generatedThumbnails);
         
         publishEvent(EXCHANGES.VIDEO, "transcode.thumbnails", {
           type: "transcode.thumbnails",
           payload: {
             videoId,
-            thumbnailOptions: thumbUrls,
+            thumbnailOptions: uploadedThumbnails,
           },
         });
+        
+        // 5. Transcode (adaptive based on source height)
         let lastProgress = 0;
-        await transcodeVideo({
+        console.log(`Starting adaptive transcoding for ${videoId} (source: ${metadata.width}x${metadata.height})`);
+        
+        const transcodeResult = await transcodeVideo({
           inputPath,
           outputDir,
-          resolutions: ["360p", "480p", "720p", "1080p"],
+          sourceHeight: metadata.height,
           onProgress: (progress) => {
-            // Map 0-100 to 20-80
-            const overallProgress = Math.round(20 + (progress * 0.6));
+            // Map 0-100 to 30-80 (thumbnails took 20-30)
+            const overallProgress = Math.round(30 + (progress * 0.5));
             
-            // Throttle updates (e.g., every 5% overall change)
+            // Throttle updates (every 2% overall change)
             if (overallProgress >= lastProgress + 2) {
               lastProgress = overallProgress;
               
@@ -162,6 +142,8 @@ export const startWorker = async () => {
             }
           }
         });
+        
+        console.log(`Transcoding complete for ${videoId}. Resolutions: ${transcodeResult.resolutions.join(", ")}`);
 
         await job.updateProgress({ step: "transcoding_done", progress: 80 });
         
@@ -174,18 +156,16 @@ export const startWorker = async () => {
           },
         });
 
-        // 4. Upload
+        // 6. Upload HLS artifacts (excluding already-uploaded thumbnails)
         await job.updateProgress({ step: "uploading", progress: 90 });
-        const uploadedFiles = await uploadArtifacts(videoId, outputDir);
+        const uploadedFiles = await uploadArtifacts(videoId, outputDir, [".m3u8", ".ts"]);
 
-        // 5. Cleanup
+        // 7. Cleanup working directory
         await fs.remove(workDir);
 
-        // 6. Notify Completed
+        // 8. Notify Completed
         const hlsPlaylistUrl = uploadedFiles.find(f => f.endsWith("master.m3u8")) || "";
-        const thumbnailUrls = uploadedFiles.filter(f => f.endsWith(".png") || f.endsWith(".jpg"));
         
-        // Ensure we have valid URLs (relative keys)
         if (!hlsPlaylistUrl) {
           throw new Error("Master playlist not found in uploaded artifacts");
         }
@@ -195,32 +175,29 @@ export const startWorker = async () => {
           payload: {
             videoId,
             hlsPlaylistUrl,
-            thumbnailOptions: thumbnailUrls,
+            thumbnailOptions: uploadedThumbnails,
             duration: metadata.duration,
             width: metadata.width,
             height: metadata.height,
-            fps: 30, // TODO: Extract FPS from metadata if needed
-            resolutions: ["360p", "480p", "720p", "1080p"],
+            fps: metadata.fps,
+            resolutions: transcodeResult.resolutions,
           },
         });
 
-        console.log(`[Job ${job.id}] Transcoding finished for ${videoId}`);
-        return { success: true, hlsPlaylistUrl, thumbnailUrls };
+        console.log(`✅ [Job ${job.id}] Transcoding finished for ${videoId}`);
+        return { success: true, hlsPlaylistUrl, thumbnailUrls: uploadedThumbnails };
       } catch (error: any) {
-        console.error(`[Job ${job.id}] Failed:`, error);
+        console.error(`❌ [Job ${job.id}] Failed:`, error);
         
-        // Determine if error is retryable
-        // FFmpeg errors matching "Invalid data found" or "no streams" are likely fatal
-        const errorMsg = error.message || "";
-        let isRetryable = true;
+        const errorMsg = error.message || "Unknown error";
         
-        if (
+        // Determine if error is fatal (UnrecoverableError or specific patterns)
+        const isFatal = 
+          error instanceof UnrecoverableError ||
           errorMsg.includes("Invalid data found") || 
           errorMsg.includes("End of file") || 
-          errorMsg.includes("Response code 404") // Missing input file on download
-        ) {
-           isRetryable = false;
-        }
+          errorMsg.includes("Response code 404") ||
+          errorMsg.includes("resolution too low");
 
         publishEvent(EXCHANGES.VIDEO, "transcode.failed", {
           type: "transcode.failed",
@@ -228,22 +205,16 @@ export const startWorker = async () => {
             videoId,
             error: errorMsg,
             stage: "processing",
-            retryable: isRetryable,
+            retryable: !isFatal,
           },
         });
 
+        // Cleanup working directory
         await fs.remove(workDir);
         
-        // If fatal, we should not throw to prevent BullMQ from retrying immediately?
-        // Actually, if we throw, BullMQ retries based on its config.
-        // We want to STOP BullMQ from retrying if it's fatal.
-        if (!isRetryable) {
-            // Signal to BullMQ that this moved to failed permanently
-            // By default UnrecoverableError might be needed but simple return might mark as completed-failed?
-            // Throwing triggers retry. 
-            // We'll throw a special error or let it fail and rely on our "retryable" payload for the app logic.
-            // But BullMQ internal retries are separate from our "retryFailedTranscodes" job.
-            // Let's just throw for now, but logged explicitly.
+        // Re-throw UnrecoverableError to prevent BullMQ retries
+        if (isFatal && !(error instanceof UnrecoverableError)) {
+          throw new UnrecoverableError(errorMsg);
         }
         
         throw error;
@@ -254,4 +225,43 @@ export const startWorker = async () => {
       concurrency: 2, // Process 2 videos in parallel per instance
     }
   );
+  
+  // Worker event handlers
+  worker.on("completed", (job) => {
+    console.log(`✅ Job ${job.id} completed successfully`);
+  });
+  
+  worker.on("failed", (job, err) => {
+    console.error(`❌ Job ${job?.id} failed:`, err.message);
+  });
+};
+
+/**
+ * Graceful shutdown - close worker and RabbitMQ
+ */
+export const stopWorker = async (): Promise<void> => {
+  isShuttingDown = true;
+  
+  if (worker) {
+    console.log("Closing worker...");
+    await worker.close();
+  }
+  
+  if (rabbitChannel) {
+    try {
+      await rabbitChannel.close();
+    } catch (err) {
+      console.warn("Error closing RabbitMQ channel:", err);
+    }
+  }
+  
+  if (rabbitConnection) {
+    try {
+      await rabbitConnection.close();
+    } catch (err) {
+      console.warn("Error closing RabbitMQ connection:", err);
+    }
+  }
+  
+  console.log("👋 Transcoding worker stopped");
 };

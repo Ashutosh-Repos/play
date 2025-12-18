@@ -164,8 +164,8 @@ const nextAuth = NextAuth({
           // Flag that username needs to be set
           (user as AuthUser).needsUsername = true;
         } else {
-          // Check if this OAuth identity exists
-          const existingIdentity = dbUser.identities.find(
+          // Check if this OAuth identity exists (dbUser is non-null here)
+          const existingIdentity = dbUser!.identities.find(
             (i) => i.provider === account.provider && i.providerUserId === account.providerAccountId
           );
 

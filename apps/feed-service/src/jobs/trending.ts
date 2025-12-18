@@ -41,7 +41,7 @@ export async function refreshTrendingCache() {
             take: 50,
             select: { id: true }
         });
-        trendingIds = topVideos.map(v => v.id);
+        trendingIds = topVideos.map((v: { id: string }) => v.id);
     }
     
     if (trendingIds.length === 0) return;

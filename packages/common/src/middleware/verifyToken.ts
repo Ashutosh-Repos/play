@@ -2,12 +2,13 @@
 // Microservices use this to verify tokens from Next.js auth
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import type { AuthUser, UserRole, UserStatus } from "../types";
+import type { AuthUser, UserRole, UserStatus } from "../types/index";
 
 const JWT_SECRET = process.env.AUTH_SECRET || process.env.JWT_SECRET || "";
 
-export interface AuthenticatedRequest extends Request {
-  user?: AuthUser;
+// Use separate interface to avoid conflict with Express global Request.user
+export interface AuthenticatedRequest extends Omit<Request, "user"> {
+  user?: JWTPayload["user"];
 }
 
 export interface JWTPayload {
@@ -47,8 +48,15 @@ export function verifyToken(
   }
 
   const token = authHeader.split(" ")[1];
+  
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      error: { code: "UNAUTHORIZED", message: "Invalid token format" },
+    });
+  }
 
-  if (!JWT_SECRET) {
+  if (!JWT_SECRET || JWT_SECRET.length === 0) {
     console.error("JWT_SECRET not configured");
     return res.status(500).json({
       success: false,
@@ -96,7 +104,7 @@ export function optionalAuth(
 
   const token = authHeader.split(" ")[1];
 
-  if (!JWT_SECRET) {
+  if (!token || !JWT_SECRET) {
     return next();
   }
 

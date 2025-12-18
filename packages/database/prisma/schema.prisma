@@ -7,8 +7,8 @@
 // ARCHITECTURE:
 // - PostgreSQL: Source of truth for all transactional data
 // - Redis: Feed caching, session cache, real-time counters
-// - ClickHouse: Analytics, detailed view events, historical metrics
 // - Meilisearch: Full-text search for videos and channels
+// - MinIO: Object storage for videos and thumbnails
 //
 // DENORMALIZATION STRATEGY:
 // - Counters on Video/Channel: Avoid COUNT(*) on hot paths
@@ -18,15 +18,12 @@
 //
 // Service mapping:
 // - user-service: User, OAuthIdentity, Channel, Subscription
-// - video-service: Video, Playlist, PlaylistVideo, Category
-// - ingest-service: Video (upload fields)
-// - transcoder-service: Video (processing fields)
+// - video-service: Video (upload, metadata, lifecycle), Playlist, PlaylistVideo, Category
+// - transcoder-service: Video (HLS processing)
 // - engagement-service: Comment, VideoReaction, CommentReaction, VideoStats
 // - notification-service: Notification, NotificationSettings
 // - feed-service: Video, Subscription, WatchHistory, UserInterest, VideoStats
-// - search-service: Video, Channel, LiveStream (reads for indexing to Meilisearch)
-// - analytics-service: ClickHouse (ViewEvent, WatchTime, etc.)
-// - live-service: LiveStream, LiveChat
+// - search-service: Video, Channel (reads for indexing to Meilisearch)
 // =============================================================================
 
 generator client {
@@ -793,6 +790,10 @@ model Notification {
   @@index([userId, isRead, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
   @@index([type, createdAt(sort: Desc)])  // Notifications by type
+  
+  // Idempotency: User + Video + Type (e.g. NEW_VIDEO, VIDEO_LIKE) must be unique
+  // Note: For types where videoId is null (e.g. NEW_SUBSCRIBER), Postgres allows duplicates (nulls distinct).
+  @@unique([userId, videoId, type]) 
   @@map("notifications")
 }
 

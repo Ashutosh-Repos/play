@@ -21,10 +21,14 @@
   "devDependencies": {
     "prettier": "^3.7.4",
     "turbo": "^2.6.3",
-    "typescript": "5.9.2"
+    "typescript": "5.9.3"
   },
   "packageManager": "pnpm@9.0.0",
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
+    "jsonwebtoken": "^9.0.3"
   }
 }

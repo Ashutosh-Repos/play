@@ -1,8 +1,9 @@
 // JWT verification for microservices
 import jwt from "jsonwebtoken";
-import type { UserRole } from "../types";
+import type { UserRole } from "../types/index";
 
-const AUTH_SECRET = process.env.AUTH_SECRET || "";
+// Read AUTH_SECRET lazily to allow environment to be loaded
+const getAuthSecret = () => process.env.AUTH_SECRET || process.env.JWT_SECRET || "";
 
 export interface TokenPayload {
   sub: string;        // userId
@@ -24,6 +25,7 @@ export interface VerifyResult {
  * Verify JWT token and extract payload
  */
 export function verifyToken(token: string): VerifyResult {
+  const AUTH_SECRET = getAuthSecret();
   if (!AUTH_SECRET) {
     return { valid: false, error: "AUTH_SECRET not configured" };
   }

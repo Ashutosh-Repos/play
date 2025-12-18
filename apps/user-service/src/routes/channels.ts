@@ -1,8 +1,8 @@
 // Channels routes
 import { Router } from "express";
 import { prisma } from "@repo/database";
-import { authMiddleware } from "@repo/common";
-import { createChannelSchema, updateChannelSchema } from "../schemas.js";
+import { authMiddleware, requireRole } from "@repo/common";
+import { createChannelSchema, updateChannelSchema } from "@repo/validation";
 import { emitChannelCreated, emitChannelUpdated, emitChannelDeleted } from "../events/publisher.js";
 
 const router = Router();
