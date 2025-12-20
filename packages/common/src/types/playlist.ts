@@ -1,6 +1,6 @@
 // Playlist types aligned with Prisma schema
 
-import type { VideoVisibility } from "./video";
+import type { VideoVisibility } from "./video.js";
 
 /**
  * Video in playlist

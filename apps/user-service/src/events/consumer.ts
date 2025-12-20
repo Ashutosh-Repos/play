@@ -11,10 +11,15 @@ import {
 let connection: Awaited<ReturnType<typeof amqp.connect>> | null = null;
 let channel: amqp.Channel | null = null;
 
+import { serverEnv } from "@repo/config";
+
+// Read at runtime, not module load time
+const getRabbitMQUrl = () => serverEnv.RABBITMQ_URL;
+
 const QUEUE_NAME = "user-service.video-events";
 
 export async function startConsumer(): Promise<void> {
-  const url = process.env.RABBITMQ_URL || "amqp://localhost:5672";
+  const url = getRabbitMQUrl();
 
   try {
     connection = await amqp.connect(url);
@@ -99,8 +104,18 @@ async function handleVideoDeleted(event: VideoDeletedEvent): Promise<void> {
     return;
   }
 
-  // Safe decrement - won't go below 0
-  await prisma.$executeRaw`UPDATE channels SET video_count = GREATEST(video_count - 1, 0) WHERE id = ${channelId}`;
+  // Safe decrement - use Prisma API to decrement videoCount
+  const channel = await prisma.channel.findUnique({
+    where: { id: channelId },
+    select: { videoCount: true },
+  });
+  
+  if (channel && channel.videoCount > 0) {
+    await prisma.channel.update({
+      where: { id: channelId },
+      data: { videoCount: { decrement: 1 } },
+    });
+  }
 
   console.log(`✅ Decremented videoCount for channel ${channelId}`);
 }

@@ -19,10 +19,19 @@ redis.on("error", (err: Error) => {
   console.error("Redis error:", err);
 });
 
+// Cache TTLs
+const CACHE_TTL = {
+  VIDEO_STATUS: 24 * 60 * 60, // 24h for processing status
+  VIDEO_META: 60 * 5,         // 5 min for video metadata
+  CATEGORY: 60 * 30,          // 30 min for category list
+};
+
 // Redis key prefixes
 export const REDIS_KEYS = {
   videoStatus: (videoId: string) => `video:${videoId}:status`,
+  videoMeta: (videoId: string) => `video:${videoId}:meta`,
   videoWsChannel: (videoId: string) => `video:${videoId}:ws`,
+  categories: () => `categories:all`,
   rateLimit: (ip: string, action: string) => `rate:${ip}:${action}`,
 };
 
@@ -43,7 +52,7 @@ export async function cacheVideoStatus(
   status: VideoStatusCache
 ): Promise<void> {
   const key = REDIS_KEYS.videoStatus(videoId);
-  await redis.set(key, JSON.stringify(status), "EX", 24 * 60 * 60); // 24h TTL
+  await redis.set(key, JSON.stringify(status), "EX", CACHE_TTL.VIDEO_STATUS);
 }
 
 /**
@@ -54,6 +63,45 @@ export async function getCachedVideoStatus(
 ): Promise<VideoStatusCache | null> {
   const key = REDIS_KEYS.videoStatus(videoId);
   const data = await redis.get(key);
+  return data ? JSON.parse(data) : null;
+}
+
+/**
+ * Cache video metadata (for public video view)
+ */
+export async function cacheVideoMeta(videoId: string, data: object): Promise<void> {
+  const key = REDIS_KEYS.videoMeta(videoId);
+  await redis.set(key, JSON.stringify(data), "EX", CACHE_TTL.VIDEO_META);
+}
+
+/**
+ * Get cached video metadata
+ */
+export async function getCachedVideoMeta(videoId: string): Promise<object | null> {
+  const key = REDIS_KEYS.videoMeta(videoId);
+  const data = await redis.get(key);
+  return data ? JSON.parse(data) : null;
+}
+
+/**
+ * Invalidate video metadata cache
+ */
+export async function invalidateVideoCache(videoId: string): Promise<void> {
+  await redis.del(REDIS_KEYS.videoMeta(videoId));
+}
+
+/**
+ * Cache categories list
+ */
+export async function cacheCategories(data: object[]): Promise<void> {
+  await redis.set(REDIS_KEYS.categories(), JSON.stringify(data), "EX", CACHE_TTL.CATEGORY);
+}
+
+/**
+ * Get cached categories
+ */
+export async function getCachedCategories(): Promise<object[] | null> {
+  const data = await redis.get(REDIS_KEYS.categories());
   return data ? JSON.parse(data) : null;
 }
 
@@ -99,3 +147,4 @@ export function unsubscribeFromVideoChannel(videoId: string): void {
   const channel = REDIS_KEYS.videoWsChannel(videoId);
   redisSub.unsubscribe(channel);
 }
+

@@ -1,6 +1,6 @@
 import { Channel } from "amqplib";
 import { meili, INDEX_VIDEOS } from "../lib/meili.js";
-import { prisma } from "@repo/database/client";
+import { prisma } from "@repo/database";
 
 // Queue name should be unique for this service so it gets its own copy of fanout messages if any,
 // but for 'video.ready' (Exchange: video-events), we want a dedicated queue for search indexing.
@@ -12,7 +12,7 @@ export const startVideoConsumer = async (channel: Channel) => {
   await channel.assertQueue(QUEUE_NAME, { durable: true });
 
   // Bind to relevant routing keys
-  await channel.bindQueue(QUEUE_NAME, EXCHANGE_NAME, "video.ready"); // New upload processed
+  await channel.bindQueue(QUEUE_NAME, EXCHANGE_NAME, "video.published"); // New video published (was: video.ready)
   await channel.bindQueue(QUEUE_NAME, EXCHANGE_NAME, "video.updated"); // Metadata change
   await channel.bindQueue(QUEUE_NAME, EXCHANGE_NAME, "video.deleted"); // Soft/Hard delete
   await channel.bindQueue(QUEUE_NAME, EXCHANGE_NAME, "video.stats.updated"); // Engagement updates
@@ -46,9 +46,9 @@ export const startVideoConsumer = async (channel: Channel) => {
           }]);
           console.log(`📈 Stats updated for ${videoId}`);
       } else {
-          // video.ready or video.updated
+          // video.published or video.updated
           // fetch fresh data from DB to ensure consistency
-          // Note: for video.ready, payload might differ, but fetching DB is safest source of truth
+          // Note: for video.published, payload might differ, but fetching DB is safest source of truth
           const video = await prisma.video.findUnique({
               where: { id: videoId }
           });

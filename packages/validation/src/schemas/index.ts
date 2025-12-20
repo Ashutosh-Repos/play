@@ -1,6 +1,6 @@
 // Re-export all validation schemas
-export * from "./common";
-export * from "./enums";
-export * from "./video";
-export * from "./playlist";
-export * from "./channel";
+export * from "./common.js";
+export * from "./enums.js";
+export * from "./video.js";
+export * from "./playlist.js";
+export * from "./channel.js";

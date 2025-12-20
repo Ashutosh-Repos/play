@@ -22,6 +22,18 @@ vi.mock('@repo/database', () => ({
   },
 }));
 
+// Mock @repo/common internalAuth middleware
+vi.mock('@repo/common', () => ({
+  internalAuth: () => (req: any, res: any, next: any) => {
+    // Simulate middleware behavior: convert x-user-id header to req.user
+    const userId = req.headers['x-user-id'];
+    if (userId) {
+      req.user = { sub: userId, role: 'USER' };
+    }
+    next();
+  }
+}));
+
 // Mock Publisher (to avoid RabbitMQ connection)
 vi.mock('../events/publisher', () => ({
   emitCommentCreated: vi.fn(),
@@ -30,13 +42,14 @@ vi.mock('../events/publisher', () => ({
 
 import { createComment, listComments } from './controllers/comment';
 import { toggleReaction } from './controllers/reaction';
+import { internalAuth } from '@repo/common';
 
 const app = express();
 app.use(express.json());
-// Fix routes to match controller expectations (params)
-app.post('/videos/:id/comments', createComment);
-app.get('/videos/:id/comments', listComments);
-app.post('/videos/:id/like', toggleReaction);
+// Apply internalAuth middleware to routes (like in actual routes)
+app.post('/videos/:id/comments', internalAuth(), createComment);
+app.get('/videos/:id/comments', internalAuth({ required: false }), listComments);
+app.post('/videos/:id/like', internalAuth(), toggleReaction);
 
 describe('Engagement Service', () => {
   beforeEach(() => {

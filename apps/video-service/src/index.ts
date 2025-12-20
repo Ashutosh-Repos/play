@@ -5,11 +5,6 @@ import { join } from "path";
 // Load .env from monorepo root
 dotenvConfig({ path: join(process.cwd(), "../../.env") });
 
-// BigInt JSON serialization fix (viewCount is BigInt)
-(BigInt.prototype as any).toJSON = function() {
-  return this.toString();
-};
-
 import express from "express";
 import http from "http";
 import cors from "cors";
@@ -23,7 +18,7 @@ import playlistsRouter from "./routes/playlists.js";
 import categoriesRouter from "./routes/categories.js";
 import { connectRabbitMQ, closeRabbitMQ } from "./events/publisher.js";
 import { startConsumer, stopConsumer } from "./events/consumer.js";
-import { ensureBucket } from "./lib/minio.js";
+import { ensureBucket } from "./lib/storage.js";
 import { redis } from "./lib/redis.js";
 import { setupWebSocket } from "./ws/server.js";
 import { startBackgroundJobs, stopBackgroundJobs } from "./jobs/background.js";
@@ -31,9 +26,29 @@ import { startBackgroundJobs, stopBackgroundJobs } from "./jobs/background.js";
 const app = express();
 const server = http.createServer(app);
 
+// CORS configuration - use env var in production
+const corsOptions = {
+  origin: config.allowedOrigins || true, // true = allow all in dev
+  credentials: true,
+};
+
+// Custom JSON replacer for BigInt serialization
+function bigIntReplacer(_key: string, value: unknown): unknown {
+  return typeof value === 'bigint' ? value.toString() : value;
+}
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
+
+// Override res.json to handle BigInt serialization
+app.use((_req, res, next) => {
+  const originalJson = res.json.bind(res);
+  res.json = (body: unknown) => {
+    return originalJson(JSON.parse(JSON.stringify(body, bigIntReplacer)));
+  };
+  next();
+});
 
 // Rate limiting
 const generalLimiter = rateLimit({

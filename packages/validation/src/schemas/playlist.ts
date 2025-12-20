@@ -1,6 +1,6 @@
 // Playlist validation schemas
 import { z } from "zod";
-import { optionalUrlSchema, idSchema } from "./common";
+import { optionalUrlSchema, idSchema } from "./common.js";
 
 /**
  * Create playlist schema

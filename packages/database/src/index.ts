@@ -1,2 +1,2 @@
 // @repo/database - Prisma client export
-export * from "./client";
+export * from "./client.js";

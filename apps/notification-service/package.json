@@ -10,6 +10,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@repo/common": "workspace:*",
     "@repo/config": "workspace:*",
     "@repo/database": "workspace:*",
     "@repo/events": "workspace:*",
@@ -18,6 +19,7 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^4.19.2",
+    "ioredis": "^5.4.1",
     "jsonwebtoken": "^9.0.3",
     "socket.io": "^4.7.5",
     "zod": "^3.23.8"

@@ -5,6 +5,7 @@ import { join } from "path";
 config({ path: join(process.cwd(), "../../.env") });
 import express from "express";
 import cors from "cors";
+import { serverEnv } from "@repo/config";
 import { createServer } from "http";
 import { connectRabbitMQ } from "./lib/rabbitmq.js";
 import { initSocket } from "./gateways/socket.js";
@@ -13,7 +14,12 @@ import { startNotificationConsumer } from "./consumers/notification.js";
 const app = express();
 const PORT = process.env.PORT || 4011;
 
-app.use(cors());
+// CORS config - use env var in production
+const corsOptions = {
+  origin: serverEnv.ALLOWED_ORIGINS?.split(',') || true,
+  credentials: true,
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 
 import notificationRoutes from "./routes/notification.js";
@@ -40,4 +46,20 @@ httpServer.listen(PORT, async () => {
   } catch (err) {
       console.error("Failed to init infra:", err);
   }
+});
+
+// Graceful shutdown
+process.on("SIGTERM", () => {
+  console.log("SIGTERM received");
+  httpServer.close(() => {
+    console.log("Server closed");
+    process.exit(0);
+  });
+});
+
+process.on("SIGINT", () => {
+  console.log("SIGINT received");
+  httpServer.close(() => {
+    process.exit(0);
+  });
 });

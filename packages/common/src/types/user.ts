@@ -1,8 +1,12 @@
 // User and Channel types aligned with Prisma schema
 
 export type UserRole = "USER" | "ADMIN";
-export type UserStatus = "ACTIVE" | "SUSPENDED" | "BANNED";
-
+export enum UserStatus {
+  ACTIVE = "ACTIVE",
+  SUSPENDED = "SUSPENDED",
+  BANNED = "BANNED",
+  PROVISIONED = "PROVISIONED",
+}
 /**
  * User - core user data
  */

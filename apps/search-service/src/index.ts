@@ -2,9 +2,10 @@ import { config } from "dotenv";
 import { join } from "path";
 
 // Load .env from monorepo root
-config({ path: join(process.cwd(), "../../..env") });
+config({ path: join(process.cwd(), "../../.env") });
 import express from "express";
 import cors from "cors";
+import { serverEnv } from "@repo/config";
 import { configureMeili } from "./lib/meili.js";
 import { connectRabbitMQ } from "./lib/rabbitmq.js";
 import { startVideoConsumer } from "./consumers/video.js";
@@ -12,7 +13,12 @@ import { startVideoConsumer } from "./consumers/video.js";
 const app = express();
 const PORT = process.env.PORT || 4009;
 
-app.use(cors());
+// CORS config - use env var in production
+const corsOptions = {
+  origin: serverEnv.ALLOWED_ORIGINS?.split(',') || true,
+  credentials: true,
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 
 import searchRouter from "./routes/search.js";

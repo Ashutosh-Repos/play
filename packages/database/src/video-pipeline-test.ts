@@ -38,7 +38,7 @@ let testChannelId = "";
 let testVideoId = "";
 let testToken = "";
 let uploadPath = "";
-let rabbitConnection: amqp.Connection | null = null;
+let rabbitConnection: Awaited<ReturnType<typeof amqp.connect>> | null = null;
 let rabbitChannel: amqp.Channel | null = null;
 
 // Helpers
@@ -75,14 +75,23 @@ async function fetchJson(url: string, options: RequestInit = {}) {
 
 async function connectRabbitMQ() {
   rabbitConnection = await amqp.connect(RABBITMQ_URL);
+  if (!rabbitConnection) throw new Error("Failed to connect to RabbitMQ");
   rabbitChannel = await rabbitConnection.createChannel();
   await rabbitChannel.assertExchange("video.events", "topic", { durable: true });
   pass("Connected to RabbitMQ");
 }
 
 async function closeRabbitMQ() {
-  if (rabbitChannel) await rabbitChannel.close().catch(() => {});
-  if (rabbitConnection) await rabbitConnection.close().catch(() => {});
+  try {
+    if (rabbitChannel) await rabbitChannel.close();
+  } catch (err) {
+    // Ignore close errors
+  }
+  try {
+    if (rabbitConnection) await rabbitConnection.close();
+  } catch (err) {
+    // Ignore close errors
+  }
 }
 
 // ============== PIPELINE TEST ==============

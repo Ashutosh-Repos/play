@@ -2,7 +2,7 @@
 // This handles MinIO bucket notifications when objects are uploaded
 import { Router } from "express";
 import { prisma } from "@repo/database";
-import { extractVideoIdFromPath, getObjectStat } from "../lib/minio.js";
+import { extractVideoIdFromPath, getObjectStat } from "../lib/storage.js";
 import { cacheVideoStatus, publishToVideoChannel } from "../lib/redis.js";
 import { addTranscodeJob } from "../queue/transcoding.js";
 

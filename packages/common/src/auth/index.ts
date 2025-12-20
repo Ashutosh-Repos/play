@@ -1,3 +1,3 @@
 // Auth exports
-export { verifyToken, extractTokenFromHeader, type TokenPayload, type VerifyResult } from "./verifyToken";
-export { authMiddleware, requireRole, type AuthOptions } from "./authMiddleware";
+export { verifyToken, extractTokenFromHeader, createServiceToken, type TokenPayload, type VerifyResult } from "./verifyToken.js";
+export { authMiddleware, requireRole, internalAuth, type AuthOptions } from "./authMiddleware.js";

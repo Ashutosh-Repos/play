@@ -5,9 +5,11 @@ import Google from "next-auth/providers/google";
 import GitHub from "next-auth/providers/github";
 import { prisma } from "@repo/database";
 import bcrypt from "bcryptjs";
-import type { UserRole, UserStatus } from "@repo/common";
+import { v4 as uuid } from "uuid";
+import { UserStatus, type UserRole } from "@repo/common";
+import { authConfig } from "./auth.config";
 
-// Define AuthUser type locally
+// Extend NextAuth types (keeping this for type safety in this file)
 interface AuthUser {
   id: string;
   email: string;
@@ -19,10 +21,8 @@ interface AuthUser {
   isEmailVerified: boolean;
   channelId?: string | null;
   channelHandle?: string | null;
-  needsUsername?: boolean;
 }
 
-// Extend NextAuth types
 declare module "next-auth" {
   interface Session {
     user: AuthUser;
@@ -31,6 +31,7 @@ declare module "next-auth" {
 }
 
 const nextAuth = NextAuth({
+  ...authConfig,
   providers: [
     // Credentials provider (email OR username + password)
     Credentials({
@@ -66,7 +67,10 @@ const nextAuth = NextAuth({
         }
 
         // Check status
-        if (user.status !== "ACTIVE") {
+        if (
+          user.status !== "ACTIVE" &&
+          user.status !== UserStatus.PROVISIONED
+        ) {
           throw new Error(
             user.status === "SUSPENDED" ? "Account suspended" : "Account banned"
           );
@@ -113,7 +117,11 @@ const nextAuth = NextAuth({
   ],
 
   callbacks: {
+     // Extend the base callbacks with DB logic
+    ...authConfig.callbacks,
+
     async signIn({ user, account, profile }) {
+      console.log("[AUTH_DEBUG] signIn start", { email: user.email, accountId: account?.providerAccountId });
       // Handle OAuth sign in
       if (account?.provider === "google" || account?.provider === "github") {
         const profileEmail = profile?.email;
@@ -127,11 +135,15 @@ const nextAuth = NextAuth({
         });
 
         if (!dbUser) {
+          console.log("[AUTH_DEBUG] Creating new PROVISIONED user");
           // Create new user without username (will set later)
-          // Use a temporary unique username
-          const tempUsername = `user_${Date.now().toString(36)}`;
+          // Use a temporary unique username with a distinct prefix (max 30 chars)
+          // "paramoun_" + 8 chars = 17 chars. Safe.
+          const tempUsername = `user_${uuid().substring(0, 8)}_${Math.floor(Math.random() * 1000)}`;
           const profileName = (profile as { name?: string })?.name;
-          const displayName: string = profileName ?? email.split("@")[0] ?? "User";
+          // Ensure display name fits varchar(50)
+          const rawDisplayName = profileName ?? email.split("@")[0] ?? "User";
+          const displayName: string = rawDisplayName.substring(0, 50);
           const avatarUrl = (profile as { picture?: string; avatar_url?: string })?.picture ?? 
                            (profile as { picture?: string; avatar_url?: string })?.avatar_url ?? null;
           
@@ -142,6 +154,7 @@ const nextAuth = NextAuth({
               displayName,
               avatarUrl,
               emailVerified: true, // OAuth = verified
+              status: UserStatus.PROVISIONED, // Needs onboarding
               identities: {
                 create: {
                   provider: account.provider,
@@ -161,13 +174,23 @@ const nextAuth = NextAuth({
             include: { identities: true, channel: true },
           });
 
-          // Flag that username needs to be set
-          (user as AuthUser).needsUsername = true;
+          // Flag that username needs to be set - status is PROVISIONED
         } else {
+          console.log("[AUTH_DEBUG] Found existing user", { id: dbUser.id, status: dbUser.status });
           // Check if this OAuth identity exists (dbUser is non-null here)
           const existingIdentity = dbUser!.identities.find(
             (i) => i.provider === account.provider && i.providerUserId === account.providerAccountId
           );
+
+          // Check for BANNED/SUSPENDED status
+          if (dbUser.status === UserStatus.BANNED) {
+            console.log("Blocking banned user login:", dbUser.email);
+            return false;
+          }
+          if (dbUser.status === UserStatus.SUSPENDED) {
+             console.log("Blocking suspended user login:", dbUser.email);
+             return false;
+          }
 
           if (!existingIdentity) {
             // Link new OAuth identity
@@ -184,85 +207,97 @@ const nextAuth = NextAuth({
             });
           }
 
-          // Check if username is temporary
-          if (dbUser.username.startsWith("user_")) {
-            (user as AuthUser).needsUsername = true;
-          }
+
         }
 
         // Populate user object
         if (!dbUser) {
           return false; // Should never happen
         }
-        user.id = dbUser.id;
-        (user as AuthUser).email = dbUser.email;
-        (user as AuthUser).username = dbUser.username;
-        (user as AuthUser).displayName = dbUser.displayName;
-        (user as AuthUser).avatarUrl = dbUser.avatarUrl;
-        (user as AuthUser).role = dbUser.role as UserRole;
-        (user as AuthUser).status = dbUser.status as UserStatus;
-        (user as AuthUser).isEmailVerified = dbUser.emailVerified;
-        (user as AuthUser).channelId = dbUser.channel?.id ?? null;
-        (user as AuthUser).channelHandle = dbUser.channel?.handle ?? null;
+        
       }
 
       return true;
     },
 
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
-        token.id = user.id;
-        token.email = (user as AuthUser).email;
-        token.username = (user as AuthUser).username;
-        token.displayName = (user as AuthUser).displayName;
-        token.avatarUrl = (user as AuthUser).avatarUrl;
-        token.role = (user as AuthUser).role;
-        token.status = (user as AuthUser).status;
-        token.isEmailVerified = (user as AuthUser).isEmailVerified;
-        token.channelId = (user as AuthUser).channelId;
-        token.channelHandle = (user as AuthUser).channelHandle;
-        token.needsUsername = (user as AuthUser).needsUsername;
+        console.log("[AUTH_DEBUG] jwt initial call - fetching user from DB to ensure sync", { email: user.email });
+        
+        // Fetch authoritative user data from DB by email
+        // We cannot rely on 'signIn' mutations persisting here
+        const dbUser = await prisma.user.findFirst({
+           where: { email: user.email as string },
+           include: { channel: true }
+        });
+
+        if (dbUser) {
+           console.log("[AUTH_DEBUG] jwt user found", { id: dbUser.id, status: dbUser.status });
+           token.id = dbUser.id;
+           token.email = dbUser.email;
+           token.username = dbUser.username;
+           token.displayName = dbUser.displayName;
+           token.avatarUrl = dbUser.avatarUrl;
+           token.role = dbUser.role as UserRole;
+           token.status = dbUser.status as UserStatus;
+           token.isEmailVerified = dbUser.emailVerified;
+           token.channelId = dbUser.channel?.id ?? null;
+           token.channelHandle = dbUser.channel?.handle ?? null;
+        } else {
+             console.error("[AUTH_DEBUG] CRITICAL: User verified in signIn but not found in jwt");
+             // Fallback to what we have (shouldn't happen if flow is correct)
+             token.id = user.id;
+        }
       }
+
+      // Handle session updates (e.g. client side update() call)
+      if (trigger === "update") {
+           console.log("[AUTH_DEBUG] jwt update trigger", session);
+           // Allow updating specific fields if passed, or trigger a re-fetch
+           // For now, let's just re-fetch to be safe
+           const dbUser = await prisma.user.findUnique({
+              where: { id: token.id as string },
+              include: { channel: true },
+           });
+           if (dbUser) {
+              token.status = dbUser.status as UserStatus;
+              token.username = dbUser.username;
+              token.displayName = dbUser.displayName;
+              token.avatarUrl = dbUser.avatarUrl;
+              token.bio = dbUser.bio;
+              token.channelId = dbUser.channel?.id ?? null;
+              token.channelHandle = dbUser.channel?.handle ?? null;
+           }
+      }
+
+      // If status is PROVISIONED, always re-fetch to check if onboarding is complete.
+      // This prevents users from getting stuck in an onboarding loop if the client-side update() fails.
+      if (token.status === UserStatus.PROVISIONED && !user) {
+          // fetch lightweight
+           const dbUser = await prisma.user.findUnique({
+              where: { id: token.id as string },
+              include: { channel: true },
+           });
+
+           if (dbUser) {
+              console.log("[AUTH_DEBUG] Auto-refreshing PROVISIONED user status:", dbUser.status);
+              token.status = dbUser.status as UserStatus;
+              
+              // If they are now ACTIVE, sync the new profile data
+              if (dbUser.status === UserStatus.ACTIVE) {
+                  token.username = dbUser.username;
+                  token.displayName = dbUser.displayName;
+                  token.avatarUrl = dbUser.avatarUrl;
+                  token.bio = dbUser.bio;
+                  token.channelId = dbUser.channel?.id ?? null;
+                  token.channelHandle = dbUser.channel?.handle ?? null;
+              }
+           }
+      }
+      
       return token;
     },
-
-    async session({ session, token }) {
-      session.user = {
-        id: token.id as string,
-        email: token.email as string,
-        emailVerified: null,
-        username: token.username as string | null,
-        displayName: token.displayName as string,
-        avatarUrl: token.avatarUrl as string | null | undefined,
-        role: token.role as UserRole,
-        status: token.status as UserStatus,
-        isEmailVerified: Boolean(token.isEmailVerified),
-        channelId: token.channelId as string | null | undefined,
-        channelHandle: token.channelHandle as string | null | undefined,
-        needsUsername: token.needsUsername as boolean | undefined,
-      };
-      return session;
-    },
-
-    async redirect({ url, baseUrl }) {
-      // Custom redirect handling
-      if (url.startsWith(baseUrl)) return url;
-      if (url.startsWith("/")) return `${baseUrl}${url}`;
-      return baseUrl;
-    },
   },
-
-  pages: {
-    signIn: "/login",
-    error: "/login",
-  },
-
-  session: {
-    strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
-  },
-
-  trustHost: true,
 });
 
 export const handlers = nextAuth.handlers;

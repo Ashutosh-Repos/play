@@ -1,6 +1,6 @@
 // Background jobs for video-service
 import { prisma } from "@repo/database";
-import { deleteObjectsWithPrefix } from "../lib/minio.js";
+import { deleteObjectsWithPrefix } from "../lib/storage.js";
 import { ROUTING_KEYS } from "@repo/events";
 import { config } from "../config.js";
 

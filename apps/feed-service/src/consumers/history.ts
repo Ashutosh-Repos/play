@@ -1,5 +1,5 @@
 import { Channel } from "amqplib";
-import { prisma } from "@repo/database/client";
+import { prisma } from "@repo/database";
 
 const QUEUE_NAME = "feed-service-history-queue";
 const EXCHANGE_NAME = "engagement-events"; // Defined in @repo/events

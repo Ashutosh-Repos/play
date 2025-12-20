@@ -1,15 +1,43 @@
 import amqp from "amqplib";
+
 import { serverEnv } from "@repo/config";
 
 let connection: any;
 let channel: amqp.Channel;
+let isReconnecting = false;
 
-export const connectRabbitMQ = async () => {
-  if (connection) return channel;
+const RABBITMQ_URL = serverEnv.RABBITMQ_URL;
+
+export const connectRabbitMQ = async (): Promise<amqp.Channel> => {
+  if (channel) return channel;
 
   try {
-    connection = (await amqp.connect(process.env.RABBITMQ_URL || "amqp://play:play123@localhost:5672")) as any;
+    connection = await amqp.connect(RABBITMQ_URL);
     channel = await connection.createChannel();
+    
+    // Handle connection close - attempt reconnect
+    connection.on("close", () => {
+      if (!isReconnecting) {
+        console.warn("⚠️ RabbitMQ connection closed, reconnecting in 5s...");
+        isReconnecting = true;
+        channel = null as any;
+        connection = null;
+        setTimeout(async () => {
+          try {
+            await connectRabbitMQ();
+            isReconnecting = false;
+          } catch (err) {
+            console.error("❌ Reconnection failed:", err);
+            isReconnecting = false;
+          }
+        }, 5000);
+      }
+    });
+
+    connection.on("error", (err: Error) => {
+      console.error("❌ RabbitMQ connection error:", err);
+    });
+
     console.log("✅ RabbitMQ Connected (Feed Service)");
     return channel;
   } catch (error) {
@@ -17,3 +45,5 @@ export const connectRabbitMQ = async () => {
     throw error;
   }
 };
+
+export const getChannel = () => channel;

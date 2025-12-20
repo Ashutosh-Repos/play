@@ -8,6 +8,7 @@ import express from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 import { prisma } from "@repo/database";
+import { serverEnv } from "@repo/config";
 
 // Routes
 import usersRouter from "./routes/users.js";
@@ -47,8 +48,12 @@ const strictLimiter = rateLimit({
   },
 });
 
-// Middleware
-app.use(cors());
+// Middleware - CORS config from env
+const corsOptions = {
+  origin: serverEnv.ALLOWED_ORIGINS?.split(',') || true,
+  credentials: true,
+};
+app.use(cors(corsOptions));
 app.use(express.json({ limit: "1mb" }));
 
 // Health check (no rate limit)
@@ -79,13 +84,15 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 });
 
 // Start server
+let server: ReturnType<typeof app.listen>;
+
 async function start() {
   try {
     // Connect to RabbitMQ
     await connectRabbitMQ();
     await startConsumer();
 
-    app.listen(PORT, () => {
+    server = app.listen(PORT, () => {
       console.log(`🚀 user-service running on port ${PORT}`);
     });
   } catch (error) {
@@ -93,6 +100,28 @@ async function start() {
     process.exit(1);
   }
 }
+
+// Graceful shutdown
+process.on("SIGTERM", () => {
+  console.log("SIGTERM received");
+  if (server) {
+    server.close(async () => {
+      console.log("Server closed");
+      await prisma.$disconnect();
+      process.exit(0);
+    });
+  }
+});
+
+process.on("SIGINT", () => {
+  console.log("SIGINT received");
+  if (server) {
+    server.close(async () => {
+      await prisma.$disconnect();
+      process.exit(0);
+    });
+  }
+});
 
 if (process.env.NODE_ENV !== "test") {
   start();

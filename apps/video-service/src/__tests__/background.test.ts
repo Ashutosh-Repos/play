@@ -34,8 +34,8 @@ vi.mock('@repo/database', () => ({
   prisma: mockPrisma,
 }));
 
-// 3. Mock MinIO
-vi.mock('../lib/minio.js', () => ({
+// 3. Mock Storage
+vi.mock('../lib/storage.js', () => ({
   deleteObjectsWithPrefix: vi.fn(),
 }));
 
@@ -53,7 +53,7 @@ import {
   retryFailedTranscodes,
   hardDeleteOldVideos
 } from '../jobs/background.js';
-import { deleteObjectsWithPrefix } from '../lib/minio.js';
+import { deleteObjectsWithPrefix } from '../lib/storage.js';
 import { emitVideoUploaded } from '../events/publisher.js';
 
 describe('Background Jobs', () => {

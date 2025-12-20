@@ -59,6 +59,7 @@ export async function saveToOutbox(entry: OutboxEntry, tx: any = prisma): Promis
   const outboxEvent = await tx.outboxEvent.create({
     data: {
       eventType: entry.eventType,
+      routingKey: entry.routingKey,
       payload: entry.payload as object,
     },
   });
@@ -88,49 +89,12 @@ export async function processOutboxItem(outboxId: string): Promise<void> {
   const event = await prisma.outboxEvent.findUnique({
     where: { id: outboxId },
   });
-  
+
   if (!event || event.processedAt) return;
-  
-  // We need routing key. Currently not stored in outbox event model explicitly??
-  // Wait, schema check.
-  // model OutboxEvent { ... eventType, payload ... } - NO ROUTING KEY in schema!
-  
-  // Checking schema again...
-  // model OutboxEvent { id, eventType, payload, createdAt, processedAt }
-  
-  // The 'routingKey' is missing from the DB model!
-  // 'publisher.ts': saveToOutbox takes 'routingKey' but DOES NOT SAVE IT.
-  // It saves eventType and payload.
-  
-  // ERROR: We assume we can derive routingKey from eventType?
-  // Or we need to add routingKey to the schema?
-  
-  // Let's check saveToOutbox implementation again.
-  // export async function saveToOutbox(entry: OutboxEntry, ...): Promise<string> {
-  //   const outboxEvent = await tx.outboxEvent.create({
-  //     data: {
-  //       eventType: entry.eventType,
-  //       payload: entry.payload as object,
-  //     },
-  //   });
-  //   return outboxEvent.id;
-  // }
-  
-  // It DROPS the routingKey.
-  // So 'processOutboxItem' cannot know where to publish unless we map eventType -> routingKey.
-  
-  // We should fix the Schema to include routingKey, or map it.
-  // Mapping is easier for now to avoid another migration.
-  
-  let routingKey = "";
-  if (event.eventType === "video.published") routingKey = ROUTING_KEYS.VIDEO_PUBLISHED;
-  else if (event.eventType === "video.uploaded") routingKey = ROUTING_KEYS.VIDEO_UPLOADED;
-  else if (event.eventType === "video.deleted") routingKey = ROUTING_KEYS.VIDEO_DELETED;
-  else if (event.eventType === "video.updated") routingKey = "video.updated"; // Check this constant
-  else return; // Unknown event type
-  
-  publish(routingKey, event.payload as object);
-  
+
+  // Publish using the stored routing key
+  publish(event.routingKey, event.payload as object);
+
   await prisma.outboxEvent.update({
     where: { id: outboxId },
     data: { processedAt: new Date() },

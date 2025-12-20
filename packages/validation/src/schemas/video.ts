@@ -1,7 +1,7 @@
 // Video validation schemas
 import { z } from "zod";
-import { VideoVisibility, ProcessingStatus } from "./enums";
-import { tagsSchema, optionalUrlSchema } from "./common";
+import { VideoVisibility, ProcessingStatus } from "./enums.js";
+import { tagsSchema, optionalUrlSchema } from "./common.js";
 
 // ==================== Create/Update ====================
 

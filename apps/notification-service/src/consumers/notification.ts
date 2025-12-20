@@ -1,5 +1,5 @@
 import { Channel } from "amqplib";
-import { prisma } from "@repo/database/client";
+import { prisma } from "@repo/database";
 import { pushNotification } from "../gateways/socket.js";
 
 const QUEUE_NAME = "notification-service-queue";

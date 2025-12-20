@@ -1,2 +1,2 @@
 // Middleware exports
-export * from "./verifyToken";
+export * from "./verifyToken.js";

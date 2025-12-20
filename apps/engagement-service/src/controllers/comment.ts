@@ -1,6 +1,9 @@
 import { Request, Response } from "express";
 import { prisma } from "@repo/database";
 import { z } from "zod";
+import { sanitize } from "@repo/common";
+
+// Sanitization logic moved to @repo/common
 
 const CreateCommentSchema = z.object({
   content: z.string().min(1).max(2000),
@@ -19,12 +22,18 @@ async function isVideoOwner(userId: string, videoId: string) {
 // POST /videos/:id/comments
 export const createComment = async (req: Request, res: Response) => {
   try {
-    const userId = req.headers["x-user-id"] as string;
+    const userId = req.user?.sub;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const { id: videoId } = req.params;
     if (!videoId) return res.status(400).json({ error: "Video ID required" });
     const { content, parentId } = CreateCommentSchema.parse(req.body);
+
+    // Sanitize comment content to prevent XSS
+    const sanitizedContent = sanitize(content);
+    if (!sanitizedContent) {
+      return res.status(400).json({ error: "Comment content cannot be empty after sanitization" });
+    }
 
     // If reply, Verify parent exists and belongs to same video
     if (parentId) {
@@ -36,7 +45,7 @@ export const createComment = async (req: Request, res: Response) => {
 
     const comment = await prisma.comment.create({
       data: {
-        content,
+        content: sanitizedContent, // Use sanitized content
         videoId,
         userId,
         parentId,
@@ -166,7 +175,7 @@ export const listReplies = async (req: Request, res: Response) => {
 // DELETE /comments/:id
 export const deleteComment = async (req: Request, res: Response) => {
     try {
-        const userId = req.headers["x-user-id"] as string;
+        const userId = req.user?.sub;
         const { id: commentId } = req.params;
         if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -217,7 +226,7 @@ export const deleteComment = async (req: Request, res: Response) => {
 // POST /comments/:id/pin (Toggle)
 export const pinComment = async (req: Request, res: Response) => {
     try {
-        const userId = req.headers["x-user-id"] as string;
+        const userId = req.user?.sub;
         const { id: commentId } = req.params;
         if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -251,7 +260,7 @@ export const pinComment = async (req: Request, res: Response) => {
 // POST /comments/:id/unpin
 export const unpinComment = async (req: Request, res: Response) => {
     try {
-        const userId = req.headers["x-user-id"] as string;
+        const userId = req.user?.sub;
         const { id: commentId } = req.params;
         if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -277,7 +286,7 @@ export const unpinComment = async (req: Request, res: Response) => {
 // POST /comments/:id/heart
 export const heartComment = async (req: Request, res: Response) => {
     try {
-        const userId = req.headers["x-user-id"] as string;
+        const userId = req.user?.sub;
         const { id: commentId } = req.params;
         if (!userId) return res.status(401).json({ error: "Unauthorized" });
 

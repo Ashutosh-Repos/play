@@ -18,8 +18,10 @@ import {
 let connection: Awaited<ReturnType<typeof amqp.connect>> | null = null;
 let channel: amqp.Channel | null = null;
 
+import { serverEnv } from "@repo/config";
+
 export async function connectRabbitMQ(): Promise<void> {
-  const url = process.env.RABBITMQ_URL || "amqp://localhost:5672";
+  const url = serverEnv.RABBITMQ_URL;
 
   try {
     connection = await amqp.connect(url);

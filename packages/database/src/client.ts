@@ -18,5 +18,38 @@ if (process.env.NODE_ENV !== "production") {
   globalThis.prisma = prisma;
 }
 
-export type { PrismaClient };
-export * from "@prisma/client";
+// Re-export Prisma types and enums with named exports (avoids Turbopack warning)
+export { PrismaClient, Prisma } from "@prisma/client";
+
+// Export commonly used enums (matching schema.prisma)
+export {
+  ProcessingStatus,
+  VideoVisibility,
+  UserRole,
+  UserStatus,
+  ReactionType,
+  CommentStatus,
+  NotificationType,
+  LiveStreamStatus,
+  ReportStatus,
+  ReportReason,
+  SubscriptionNotificationLevel,
+} from "@prisma/client";
+
+// Export types
+export type {
+  User,
+  Channel,
+  Video,
+  Comment,
+  VideoReaction,
+  Subscription,
+  WatchHistory,
+  Notification,
+  NotificationSettings,
+  Playlist,
+  LiveStream,
+  Report,
+  RefreshToken,
+  OAuthIdentity,
+} from "@prisma/client";

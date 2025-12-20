@@ -26,6 +26,9 @@ export const config = {
   // JWT
   jwtSecret: serverEnv.JWT_SECRET,
   
+  // CORS
+  allowedOrigins: serverEnv.ALLOWED_ORIGINS?.split(',') || null,
+  
   // Upload settings
   upload: {
     maxFileSize: 10 * 1024 * 1024 * 1024, // 10GB

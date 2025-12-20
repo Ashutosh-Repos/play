@@ -117,7 +117,9 @@ router.get("/me", authMiddleware(), async (req, res) => {
       where: {
         channelId: channel.id,
         deletedAt: null,
-        ...(status && { processingStatus: status as any }),
+        ...(status && ["PENDING", "PROCESSING", "READY", "FAILED"].includes(status) 
+           ? { processingStatus: status as "PENDING" | "PROCESSING" | "READY" | "FAILED" } 
+           : {}),
       },
       take: limit + 1,
       ...(cursor && { cursor: { id: cursor }, skip: 1 }),
@@ -510,9 +512,10 @@ router.delete("/:id", authMiddleware(), async (req, res) => {
 
     // Decrement channel video count if was public
     if (video.visibility === "PUBLIC") {
-      await prisma.$executeRaw`
-        UPDATE channels SET video_count = GREATEST(video_count - 1, 0) WHERE id = ${video.channelId}
-      `;
+      await prisma.channel.update({
+        where: { id: video.channelId },
+        data: { videoCount: { decrement: 1 } },
+      });
     }
 
     // Emit event

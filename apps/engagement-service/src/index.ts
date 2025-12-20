@@ -12,7 +12,13 @@ import { startBackgroundJobs } from "./jobs/worker.js";
 const app = express();
 const PORT = process.env.PORT || 4006;
 
-app.use(cors());
+// CORS config - use env var in production
+const corsOptions = {
+  origin: serverEnv.ALLOWED_ORIGINS?.split(',') || true,
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 import reactionRouter from "./routes/reaction.js";

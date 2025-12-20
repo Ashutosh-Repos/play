@@ -170,10 +170,13 @@ router.delete("/:channelId", authMiddleware(), async (req, res) => {
       });
     }
 
-    // Delete and decrement atomically (safe decrement - won't go below 0)
+    // Delete and decrement atomically
     await prisma.$transaction([
       prisma.subscription.delete({ where: { id: subscription.id } }),
-      prisma.$executeRaw`UPDATE channels SET subscriber_count = GREATEST(subscriber_count - 1, 0) WHERE id = ${channelId}`,
+      prisma.channel.update({
+        where: { id: channelId },
+        data: { subscriberCount: { decrement: 1 } },
+      }),
     ]);
 
     // Emit event

@@ -10,8 +10,8 @@ const ToggleSchema = z.object({
 
 export const toggleReaction = async (req: Request, res: Response) => {
   try {
-    // Auth check should be middleware (assuming req.user populated)
-    const userId = req.headers["x-user-id"] as string; 
+    // User set by internalAuth middleware
+    const userId = req.user?.sub;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const { id: videoId } = req.params;
@@ -69,7 +69,7 @@ export const toggleReaction = async (req: Request, res: Response) => {
 };
 
 export const getReaction = async (req: Request, res: Response) => {
-    const userId = req.headers["x-user-id"] as string;
+    const userId = req.user?.sub;
     const { id: videoId } = req.params;
     
     if (!userId) return res.json({ type: null });

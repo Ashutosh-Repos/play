@@ -3,7 +3,7 @@ import { Router } from "express";
 import { prisma } from "@repo/database";
 import { authMiddleware } from "@repo/common";
 import { uploadVideoSchema } from "../schemas.js";
-import { getPresignedUploadUrl, getVideoPath, objectExists, getObjectStat, deleteObjectsWithPrefix } from "../lib/minio.js";
+import { getPresignedUploadUrl, getVideoPath, objectExists, getObjectStat, deleteObjectsWithPrefix } from "../lib/storage.js";
 import { cacheVideoStatus } from "../lib/redis.js";
 import { config } from "../config.js";
 import { emitVideoDeleted, emitVideoUploaded } from "../events/publisher.js";

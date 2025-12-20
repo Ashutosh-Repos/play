@@ -2,29 +2,42 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { forgotPasswordSchema, type ForgotPasswordInput } from "@/lib/validations/auth";
+import { forgotPasswordAction } from "@/app/actions/auth";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 export default function ForgotPasswordPage() {
-  const [email, setEmail] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const form = useForm<ForgotPasswordInput>({
+    resolver: zodResolver(forgotPasswordSchema),
+    defaultValues: {
+      email: "",
+    },
+  });
+
+  const onSubmit = async (data: ForgotPasswordInput) => {
     setIsLoading(true);
     setError("");
 
     try {
-      const res = await fetch("/api/auth/forgot-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
+      const result = await forgotPasswordAction(data);
 
-      const data = await res.json();
-
-      if (!data.success) {
-        setError(data.error?.message || "Failed to send reset email");
+      if (!result.success) {
+        setError(result.error || "Failed to send reset email");
         setIsLoading(false);
         return;
       }
@@ -67,30 +80,35 @@ export default function ForgotPasswordPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-zinc-300 mb-2">
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="you@example.com"
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-zinc-300">Email</FormLabel>
+                    <FormControl>
+                      <Input 
+                        placeholder="you@example.com" 
+                        className="bg-zinc-800 border-zinc-700 text-white" 
+                        {...field} 
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </div>
 
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-semibold rounded-lg transition-colors"
-            >
-              {isLoading ? "Sending..." : "Send Reset Link"}
-            </button>
-          </form>
+              <Button
+                type="submit"
+                className="w-full bg-blue-600 hover:bg-blue-700"
+                disabled={isLoading}
+              >
+                {isLoading ? "Sending..." : "Send Reset Link"}
+              </Button>
+            </form>
+          </Form>
 
           <div className="mt-6 text-center">
             <Link href="/login" className="text-zinc-400 text-sm hover:text-white">

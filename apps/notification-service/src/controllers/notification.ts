@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
-import { prisma } from "@repo/database/client";
+import { prisma } from "@repo/database";
 
 export const getNotifications = async (req: Request, res: Response) => {
-    const userId = req.headers["x-user-id"] as string;
+    const userId = req.user?.sub;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     try {
@@ -12,43 +12,45 @@ export const getNotifications = async (req: Request, res: Response) => {
             take: 20
         });
         
-        // Count unread
+        // Count unread (using readAt for consistency with web API)
         const unreadCount = await prisma.notification.count({
-            where: { userId, isRead: false }
+            where: { userId, readAt: null }
         });
 
         res.json({ notifications, unreadCount });
     } catch (error) {
-        console.error("Get Notifs Error", error);
+        console.error("Get Notifs Error:", error);
         res.status(500).json({ error: "Internal Error" });
     }
 };
 
 export const markAsRead = async (req: Request, res: Response) => {
     const { id } = req.params;
-    const userId = req.headers["x-user-id"] as string;
+    const userId = req.user?.sub;
     
     try {
         await prisma.notification.updateMany({
             where: { id, userId }, // Security check: must own it
-            data: { isRead: true, readAt: new Date() }
+            data: { readAt: new Date() }
         });
         res.json({ success: true });
     } catch (error) {
-         res.status(500).json({ error: "Internal Error" });
+        console.error("Mark As Read Error:", error);
+        res.status(500).json({ error: "Internal Error" });
     }
 };
 
 export const markAllAsRead = async (req: Request, res: Response) => {
-    const userId = req.headers["x-user-id"] as string;
+    const userId = req.user?.sub;
 
     try {
         await prisma.notification.updateMany({
-            where: { userId, isRead: false },
-            data: { isRead: true, readAt: new Date() }
+            where: { userId, readAt: null },
+            data: { readAt: new Date() }
         });
         res.json({ success: true });
     } catch (error) {
-         res.status(500).json({ error: "Internal Error" });
+        console.error("Mark All Read Error:", error);
+        res.status(500).json({ error: "Internal Error" });
     }
 };

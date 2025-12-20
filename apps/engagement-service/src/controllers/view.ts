@@ -9,7 +9,7 @@ export const recordView = async (req: Request, res: Response) => {
   if (!videoId) return res.status(400).json({ error: "Video ID required" });
 
   // Get identifiers for dedup
-  const userId = req.headers["x-user-id"] as string;
+  const userId = req.user?.sub;
   const ip = req.ip || req.socket.remoteAddress || "unknown";
 
   try {

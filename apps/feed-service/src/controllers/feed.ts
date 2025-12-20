@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { prisma } from "@repo/database/client";
+import { prisma } from "@repo/database";
 import { redis } from "../lib/redis.js";
 
 const TRENDING_KEY = "feed:trending";
@@ -55,7 +55,7 @@ export const getTrendingFeed = async (req: Request, res: Response) => {
 
 // Get User Subscriptions Feed
 export const getSubscriptionFeed = async (req: Request, res: Response) => {
-    const userId = req.headers["x-user-id"] as string;
+    const userId = req.user?.sub;
     const { limit, cursor } = getPagination(req);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -104,7 +104,7 @@ export const getSubscriptionFeed = async (req: Request, res: Response) => {
 
 // Get User Watch History
 export const getHistoryFeed = async (req: Request, res: Response) => {
-    const userId = req.headers["x-user-id"] as string;
+    const userId = req.user?.sub;
     const { limit, cursor } = getPagination(req);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 

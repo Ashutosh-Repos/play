@@ -10,6 +10,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@repo/common": "workspace:*",
     "@repo/config": "workspace:*",
     "@repo/database": "workspace:*",
     "@repo/events": "workspace:*",

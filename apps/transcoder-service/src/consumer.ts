@@ -13,8 +13,10 @@ let channel: Channel;
 let connection: any = null;  // amqplib.Connection
 let isShuttingDown = false;
 
+import { serverEnv } from "@repo/config";
+
 // Read at runtime, not module load time
-const getRabbitMQUrl = () => process.env.RABBITMQ_URL || "amqp://guest:guest@localhost:5672";
+const getRabbitMQUrl = () => serverEnv.RABBITMQ_URL;
 const RECONNECT_DELAY_MS = 5000;
 
 /**

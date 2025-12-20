@@ -6,6 +6,9 @@ import jwt from "jsonwebtoken";
 import { prisma } from "@repo/database";
 import { getCachedVideoStatus, redisSub, REDIS_KEYS } from "../lib/redis.js";
 import { config } from "../config.js";
+import { verifyToken } from "@repo/common";
+
+// ... [rest of file]
 
 // Track connections by videoId
 const videoConnections = new Map<string, Set<WebSocket>>();
@@ -56,13 +59,16 @@ export function setupWebSocket(server: http.Server): void {
     }
 
     let userId: string;
-    try {
-      const decoded = jwt.verify(token, config.jwtSecret) as { sub: string };
-      userId = decoded.sub;
-    } catch {
+    // Verify using shared hybrid logic
+    
+    // verifyToken is async
+    const result = await verifyToken(token);
+    
+    if (!result.valid || !result.payload) {
       ws.close(4003, "Invalid token");
       return;
     }
+    userId = result.payload.sub;
 
     // Check video exists
     const video = await prisma.video.findUnique({

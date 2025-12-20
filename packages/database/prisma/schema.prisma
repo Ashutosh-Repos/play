@@ -48,6 +48,7 @@ enum UserStatus {
   ACTIVE
   SUSPENDED
   BANNED
+  PROVISIONED  // Verified email/OAuth but profile incomplete (needs onboarding)
 }
 
 enum VideoVisibility {
@@ -907,10 +908,11 @@ model Report {
 model OutboxEvent {
   id          String    @id @default(cuid())
   eventType   String    // e.g., "video.published", "video.deleted"
+  routingKey  String    // RabbitMQ routing key for publishing
   payload     Json      // Event payload
   createdAt   DateTime  @default(now())
   processedAt DateTime? // When event was successfully published
-  
+
   @@index([processedAt, createdAt]) // For finding unprocessed events
   @@map("outbox_events")
 }

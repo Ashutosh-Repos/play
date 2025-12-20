@@ -1,6 +1,6 @@
 // Subscription types aligned with Prisma schema
 
-import type { ChannelSummary } from "./channel";
+import type { ChannelSummary } from "./channel.js";
 
 /**
  * Subscription notification level

@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import express from 'express';
-import { prisma } from '@repo/database/client';
+import { prisma } from '@repo/database';
 import { redis } from './lib/redis';
 
 // Mock Prisma
-vi.mock('@repo/database/client', () => ({
+vi.mock('@repo/database', () => ({
   prisma: {
     video: {
       findMany: vi.fn(),
@@ -26,13 +26,26 @@ vi.mock('./lib/redis', () => ({
   }
 }));
 
+// Mock @repo/common internalAuth middleware
+vi.mock('@repo/common', () => ({
+  internalAuth: () => (req: any, res: any, next: any) => {
+    const userId = req.headers['x-user-id'];
+    if (userId) {
+      req.user = { sub: userId, role: 'USER' };
+    }
+    next();
+  }
+}));
+
 import { getTrendingFeed, getSubscriptionFeed, getHistoryFeed } from './controllers/feed';
+import { internalAuth } from '@repo/common';
 
 const app = express();
 app.use(express.json());
 app.get('/feed/trending', getTrendingFeed);
-app.get('/feed/subscriptions', getSubscriptionFeed);
-app.get('/feed/history', getHistoryFeed);
+app.get('/feed/subscriptions', internalAuth(), getSubscriptionFeed);
+app.get('/feed/history', internalAuth(), getHistoryFeed);
+
 
 describe('Feed Service API', () => {
     beforeEach(() => {

@@ -4,7 +4,12 @@ import jwt from "jsonwebtoken";
 import { prisma } from "@repo/database";
 import type { UserRole, UserStatus } from "@repo/common";
 
-const AUTH_SECRET = process.env.AUTH_SECRET || "";
+// AUTH_SECRET is required - fail fast if not set
+if (!process.env.AUTH_SECRET) {
+  throw new Error("AUTH_SECRET environment variable is required");
+}
+const AUTH_SECRET: string = process.env.AUTH_SECRET;
+
 const ACCESS_TOKEN_EXPIRES = 15 * 60; // 15 minutes
 const REFRESH_TOKEN_EXPIRES = 7 * 24 * 60 * 60; // 7 days
 

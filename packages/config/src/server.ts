@@ -46,8 +46,12 @@ const serverEnvSchema = z.object({
   // JWT / Auth
   JWT_SECRET: z.string().min(16).default("VbyFelqTxFcsNxBWSyvptR6Sf2RPKtxl9eLVHex1lIk="),
   JWT_EXPIRES_IN: z.string().default("7d"),
+  AUTH_SECRET: z.string().min(16).default("VbyFelqTxFcsNxBWSyvptR6Sf2RPKtxl9eLVHex1lIk="),
   NEXTAUTH_SECRET: z.string().default("VbyFelqTxFcsNxBWSyvptR6Sf2RPKtxl9eLVHex1lIk="),
   NEXTAUTH_URL: z.string().url().default("http://localhost:3000"),
+
+  // CORS - comma-separated origins, empty means allow all in dev
+  ALLOWED_ORIGINS: z.string().optional(),
 
   // Service ports (optional, services can use defaults)
   PORT: z.coerce.number().optional(),

@@ -2,6 +2,7 @@ import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
 import { parse } from "cookie"; // You might need to install cookie or just parse header
 // Simplified auth for MVP: Pass userId in query or header
+import { verifyToken } from "@repo/common";
 
 let io: Server;
 
@@ -13,8 +14,9 @@ import { serverEnv } from "@repo/config";
 export const initSocket = (httpServer: HttpServer) => {
   io = new Server(httpServer, {
     cors: {
-      origin: "*",
-      methods: ["GET", "POST"]
+      origin: serverEnv.ALLOWED_ORIGINS?.split(',') || "*",
+      methods: ["GET", "POST"],
+      credentials: true
     }
   });
 
@@ -27,31 +29,27 @@ export const initSocket = (httpServer: HttpServer) => {
           return next(new Error("Authentication error: No token provided"));
       }
 
-      try {
-          // Verify JWT (use same secret as microservices)
-          const secret = process.env.JWT_SECRET || process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
-          if (!secret) {
-              console.error("JWT_SECRET not configured for WebSocket auth");
-              return next(new Error("Server configuration error"));
+      // Use hybrid verifyToken logic
+      
+      // Make middleware async IIFE wrapper or just handle promise
+      verifyToken(token).then((result) => {
+          if (!result.valid || !result.payload) {
+             return next(new Error("Authentication error: Invalid or expired token"));
+          }
+          
+          const userId = result.payload.sub;
+          if (!userId) {
+             return next(new Error("Authentication error: Invalid token payload"));
           }
 
-          const decoded = jwt.verify(token, secret) as any;
-          
-          // Next-Auth stores user in decoded.user, while direct JWT might use decoded.sub
-          const userId = decoded.user?.id || decoded.sub || decoded.userId;
-          
-          if (!userId) {
-              return next(new Error("Authentication error: Invalid token payload"));
-          }
-          
           // Attach user info to socket
           socket.data.userId = userId;
-          socket.data.user = decoded.user || { id: userId };
+          socket.data.user = result.payload;
           next();
-      } catch (err) {
+      }).catch((err) => {
           console.error("WebSocket auth error:", err);
-          next(new Error("Authentication error: Invalid or expired token"));
-      }
+          next(new Error("Authentication error: Internal error"));
+      });
   });
 
   io.on("connection", (socket: Socket) => {

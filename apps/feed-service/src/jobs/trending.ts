@@ -1,4 +1,4 @@
-import { prisma } from "@repo/database/client";
+import { prisma } from "@repo/database";
 import { redis } from "../lib/redis.js";
 
 const TRENDING_KEY = "feed:trending";

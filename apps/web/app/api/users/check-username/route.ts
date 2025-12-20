@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@repo/database";
 import { usernameExists } from "@/lib/bloomFilter";
+import { checkRateLimit } from "@/lib/redis";
 import type { ApiResponse } from "@repo/common";
 
 interface CheckUsernameResponse {
@@ -28,6 +29,21 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // Rate Limit: 60 per minute per IP
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0] || "anonymous";
+    const rateLimit = await checkRateLimit(
+      `check_username:${ip}`,
+      60,
+      60
+    );
+
+    if (!rateLimit.allowed) {
+       return NextResponse.json<ApiResponse>(
+        { success: false, error: { code: "RATE_LIMIT", message: "Too many requests" } },
+        { status: 429 }
+      );
+    }
+
     // Fast bloom filter check first
     const mightExist = await usernameExists(username);
 

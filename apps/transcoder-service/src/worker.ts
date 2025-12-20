@@ -10,8 +10,10 @@ import amqp, { Channel } from "amqplib";
 
 const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 
+import { serverEnv } from "@repo/config";
+
 // Read at runtime, not module load time
-const getRabbitMQUrl = () => process.env.RABBITMQ_URL || "amqp://guest:guest@localhost:5672";
+const getRabbitMQUrl = () => serverEnv.RABBITMQ_URL;
 
 let rabbitChannel: Channel;
 let rabbitConnection: any = null;  // amqplib.Connection

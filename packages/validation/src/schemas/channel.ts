@@ -1,6 +1,6 @@
 // Channel validation schemas
 import { z } from "zod";
-import { optionalUrlSchema } from "./common";
+import { optionalUrlSchema } from "./common.js";
 
 /**
  * Channel link schema

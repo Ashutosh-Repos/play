@@ -4,6 +4,7 @@ import { prisma } from "@repo/database";
 import { authMiddleware, requireRole } from "@repo/common";
 import { createChannelSchema, updateChannelSchema } from "@repo/validation";
 import { emitChannelCreated, emitChannelUpdated, emitChannelDeleted } from "../events/publisher.js";
+import { getCachedChannel, cacheChannel, invalidateChannelCache } from "../lib/redis.js";
 
 const router = Router();
 
@@ -115,11 +116,24 @@ router.get("/me", authMiddleware(), async (req, res) => {
   }
 });
 
-// GET /channels/:handle - Get channel
+// GET /channels/:handle - Get channel (with Redis caching)
 router.get("/:handle", async (req, res) => {
   try {
-    const handle = req.params.handle!;
+    const { handle } = req.params;
+    if (!handle) {
+      return res.status(400).json({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: "Handle is required" },
+      });
+    }
 
+    // Check cache first
+    const cached = await getCachedChannel(handle);
+    if (cached) {
+      return res.json({ success: true, data: cached });
+    }
+
+    // Cache miss - fetch from DB
     const channel = await prisma.channel.findUnique({
       where: { handle: handle.toLowerCase(), deletedAt: null },
       select: {
@@ -152,6 +166,9 @@ router.get("/:handle", async (req, res) => {
         error: { code: "NOT_FOUND", message: "Channel not found" },
       });
     }
+
+    // Cache the result
+    await cacheChannel(handle, channel);
 
     res.json({ success: true, data: channel });
   } catch (error) {
@@ -245,53 +262,17 @@ router.patch("/:handle", authMiddleware(), async (req, res) => {
   }
 });
 
-// GET /channels/me - Get my channel (MUST be before /:handle)
-router.get("/me", authMiddleware(), async (req, res) => {
-  try {
-    const userId = req.user!.sub;
-
-    const channel = await prisma.channel.findUnique({
-      where: { userId, deletedAt: null },
-      select: {
-        id: true,
-        handle: true,
-        displayName: true,
-        description: true,
-        avatarUrl: true,
-        bannerUrl: true,
-        isVerified: true,
-        links: true,
-        location: true,
-        contactEmail: true,
-        subscriberCount: true,
-        videoCount: true,
-        totalViews: true,
-        createdAt: true,
-      },
-    });
-
-    if (!channel) {
-      return res.status(404).json({
-        success: false,
-        error: { code: "NO_CHANNEL", message: "You don't have a channel yet" },
-      });
-    }
-
-    res.json({ success: true, data: channel });
-  } catch (error) {
-    console.error("Get my channel error:", error);
-    res.status(500).json({
-      success: false,
-      error: { code: "INTERNAL_ERROR", message: "Failed to get channel" },
-    });
-  }
-});
-
 // GET /channels/:handle/subscribers - Get channel subscribers (owner only)
 router.get("/:handle/subscribers", authMiddleware(), async (req, res) => {
   try {
     const userId = req.user!.sub;
-    const handle = req.params.handle!;
+    const { handle } = req.params;
+    if (!handle) {
+      return res.status(400).json({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: "Handle is required" },
+      });
+    }
     const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
     const cursor = req.query.cursor as string | undefined;
 
@@ -358,7 +339,13 @@ router.get("/:handle/subscribers", authMiddleware(), async (req, res) => {
 router.delete("/:handle", authMiddleware(), async (req, res) => {
   try {
     const userId = req.user!.sub;
-    const handle = req.params.handle!;
+    const { handle } = req.params;
+    if (!handle) {
+      return res.status(400).json({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: "Handle is required" },
+      });
+    }
 
     const channel = await prisma.channel.findUnique({
       where: { handle: handle.toLowerCase() },

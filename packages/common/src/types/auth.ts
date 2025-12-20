@@ -1,5 +1,5 @@
 // Auth types for JWT and session management
-import type { UserRole, UserStatus } from "./user";
+import type { UserRole, UserStatus } from "./user.js";
 
 /**
  * JWT Payload - embedded in token
