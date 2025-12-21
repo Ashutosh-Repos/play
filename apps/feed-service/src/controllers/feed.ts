@@ -62,6 +62,7 @@ export const getSubscriptionFeed = async (req: Request, res: Response) => {
     try {
         // Fetch a reasonable max number of subscriptions (prevent loading 10k+ channel IDs into memory)
         // Users with more than 500 subscriptions will only see videos from their first 500
+        // This acts as a hard cap to prevent OOM until cursor-based subscription fetching is implemented.
         const MAX_SUBSCRIPTIONS = 500;
         
         const subscriptions = await prisma.subscription.findMany({

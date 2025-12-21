@@ -52,7 +52,11 @@ export type PublishVideoInput = z.infer<typeof publishVideoSchema>;
  * Upload initiation schema
  */
 export const uploadVideoSchema = z.object({
-  fileName: z.string().min(1).max(255),
+  fileName: z
+    .string()
+    .min(1)
+    .max(255)
+    .regex(/^[a-zA-Z0-9._-]+$/, "Filename can only contain alphanumeric characters, dots, underscores, and dashes"),
 });
 
 export type UploadVideoInput = z.infer<typeof uploadVideoSchema>;

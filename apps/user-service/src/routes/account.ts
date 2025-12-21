@@ -281,6 +281,21 @@ router.delete("/", authMiddleware(), async (req, res) => {
           error: { code: "INVALID_PASSWORD", message: "Incorrect password" },
         });
       }
+    } else {
+      // For OAuth users (no password), require recent login (re-authentication)
+      // Check 'iat' (issued at) claim in JWT
+      const tokenIat = (req.user as any).iat; // Assuming 'iat' is available in decoded token
+      const fiveMinutesAgo = Math.floor(Date.now() / 1000) - 5 * 60;
+
+      if (!tokenIat || tokenIat < fiveMinutesAgo) {
+         return res.status(401).json({
+          success: false,
+          error: { 
+            code: "REAUTHENTICATION_REQUIRED", 
+            message: "For security, please sign out and sign in again before deleting your account." 
+          },
+        });
+      }
     }
 
     // Soft delete - set deletedAt
@@ -416,153 +431,9 @@ router.patch("/password", authMiddleware(), async (req, res) => {
   }
 });
 
-// POST /account/email - Request email change (sends verification to new email)
-router.post("/email", authMiddleware(), async (req, res) => {
-  try {
-    const userId = req.user!.sub;
-    const { newEmail, password } = req.body;
+// Email change routes removed due to security vulnerability (no storage of pending email)
+// TODO: Re-implement with secure PendingEmailChange model
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!newEmail || !emailRegex.test(newEmail)) {
-      return res.status(400).json({
-        success: false,
-        error: { code: "VALIDATION_ERROR", message: "Valid email required" },
-      });
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true, passwordHash: true },
-    });
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: { code: "NOT_FOUND", message: "User not found" },
-      });
-    }
-
-    // Verify password if user has one
-    if (user.passwordHash) {
-      if (!password) {
-        return res.status(400).json({
-          success: false,
-          error: { code: "PASSWORD_REQUIRED", message: "Password required to change email" },
-        });
-      }
-      const valid = await bcrypt.compare(password, user.passwordHash);
-      if (!valid) {
-        return res.status(401).json({
-          success: false,
-          error: { code: "INVALID_PASSWORD", message: "Incorrect password" },
-        });
-      }
-    }
-
-    // Check if email already in use
-    const existing = await prisma.user.findUnique({ where: { email: newEmail.toLowerCase() } });
-    if (existing) {
-      return res.status(400).json({
-        success: false,
-        error: { code: "EMAIL_TAKEN", message: "Email already in use" },
-      });
-    }
-
-    // Generate verification token
-    const crypto = await import("crypto");
-    const token = crypto.randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-
-    // Store pending email change (store in token metadata)
-    await prisma.emailVerificationToken.create({
-      data: {
-        userId,
-        token,
-        expiresAt,
-        // Note: In production, store newEmail in a separate table or metadata field
-      },
-    });
-
-    // TODO: Send verification email with link: /account/email/verify/:token?email=newEmail
-    console.log(`📧 Email change verification token for ${userId}: ${token} (new email: ${newEmail})`);
-
-    res.json({
-      success: true,
-      data: { message: "Verification email sent to new address. Check your inbox." },
-    });
-  } catch (error) {
-    console.error("Request email change error:", error);
-    res.status(500).json({
-      success: false,
-      error: { code: "INTERNAL_ERROR", message: "Failed to request email change" },
-    });
-  }
-});
-
-// GET /account/email/verify/:token - Verify new email (with email in query)
-router.get("/email/verify/:token", async (req, res) => {
-  try {
-    const { token } = req.params;
-    const newEmail = req.query.email as string;
-
-    if (!token || !newEmail) {
-      return res.status(400).json({
-        success: false,
-        error: { code: "VALIDATION_ERROR", message: "Token and email required" },
-      });
-    }
-
-    const verification = await prisma.emailVerificationToken.findUnique({
-      where: { token },
-      include: { user: true },
-    });
-
-    if (!verification) {
-      return res.status(404).json({
-        success: false,
-        error: { code: "INVALID_TOKEN", message: "Invalid or expired token" },
-      });
-    }
-
-    if (verification.expiresAt < new Date()) {
-      await prisma.emailVerificationToken.delete({ where: { id: verification.id } });
-      return res.status(400).json({
-        success: false,
-        error: { code: "TOKEN_EXPIRED", message: "Token has expired" },
-      });
-    }
-
-    // Check if email still available
-    const existing = await prisma.user.findUnique({ where: { email: newEmail.toLowerCase() } });
-    if (existing && existing.id !== verification.userId) {
-      return res.status(400).json({
-        success: false,
-        error: { code: "EMAIL_TAKEN", message: "Email already in use" },
-      });
-    }
-
-    // Update email and delete token
-    await prisma.$transaction([
-      prisma.user.update({
-        where: { id: verification.userId },
-        data: { email: newEmail.toLowerCase(), emailVerified: true },
-      }),
-      prisma.emailVerificationToken.delete({ where: { id: verification.id } }),
-    ]);
-
-    res.json({
-      success: true,
-      data: { message: "Email changed successfully" },
-    });
-  } catch (error) {
-    console.error("Verify email change error:", error);
-    res.status(500).json({
-      success: false,
-      error: { code: "INTERNAL_ERROR", message: "Failed to verify email" },
-    });
-  }
-});
 
 // PATCH /account/username - Change username (rate limited - max 1 change per 30 days)
 router.patch("/username", authMiddleware(), async (req, res) => {

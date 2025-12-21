@@ -8,6 +8,8 @@ import {
   VideoDeletedEvent,
 } from "@repo/events";
 
+import { checkIdempotency, markEventProcessed } from "../lib/redis.js";
+
 let connection: Awaited<ReturnType<typeof amqp.connect>> | null = null;
 let channel: amqp.Channel | null = null;
 
@@ -69,7 +71,18 @@ async function handleMessage(msg: amqp.ConsumeMessage | null): Promise<void> {
 }
 
 async function handleVideoPublished(event: VideoPublishedEvent): Promise<void> {
-  const { channelId } = event.payload;
+  const { videoId, channelId } = event.payload;
+
+  // Idempotency Check: Use videoId + eventType as unique key (or messageId if available)
+  // Since we don't have messageId easily here without changing the envelope, 
+  // and "published" happens once per video, videoId is unique enough for this specific event type.
+  // Ideally, use a unique event ID from the producer.
+  const idempotencyKey = `video.published:${videoId}`;
+  
+  if (await checkIdempotency(idempotencyKey)) {
+    console.log(`Duplicate video.published event for ${videoId}, skipping`);
+    return;
+  }
 
   // Check if channel exists before updating
   const channelExists = await prisma.channel.findUnique({
@@ -87,11 +100,19 @@ async function handleVideoPublished(event: VideoPublishedEvent): Promise<void> {
     data: { videoCount: { increment: 1 } },
   });
 
+  await markEventProcessed(idempotencyKey);
   console.log(`✅ Incremented videoCount for channel ${channelId}`);
 }
 
 async function handleVideoDeleted(event: VideoDeletedEvent): Promise<void> {
-  const { channelId } = event.payload;
+  const { videoId, channelId } = event.payload;
+
+  const idempotencyKey = `video.deleted:${videoId}`;
+  
+  if (await checkIdempotency(idempotencyKey)) {
+     console.log(`Duplicate video.deleted event for ${videoId}, skipping`);
+     return;
+  }
 
   // Check if channel exists before updating
   const channelExists = await prisma.channel.findUnique({
@@ -117,6 +138,7 @@ async function handleVideoDeleted(event: VideoDeletedEvent): Promise<void> {
     });
   }
 
+  await markEventProcessed(idempotencyKey);
   console.log(`✅ Decremented videoCount for channel ${channelId}`);
 }
 

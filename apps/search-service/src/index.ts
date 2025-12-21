@@ -9,6 +9,7 @@ import { serverEnv } from "@repo/config";
 import { configureMeili } from "./lib/meili.js";
 import { connectRabbitMQ } from "./lib/rabbitmq.js";
 import { startVideoConsumer } from "./consumers/video.js";
+import { startChannelConsumer } from "./consumers/channel.js";
 
 const app = express();
 const PORT = process.env.PORT || 4009;
@@ -41,6 +42,7 @@ const server = app.listen(PORT, async () => {
   try {
       const channel = await connectRabbitMQ();
       await startVideoConsumer(channel);
+      await startChannelConsumer(channel);
   } catch (err) {
       console.log("Failed to start consumers", err);
   }

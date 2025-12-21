@@ -54,7 +54,9 @@ export const startWorker = async () => {
       console.log(`[Job ${job.id}] Processing video ${videoId}`);
 
       const workDir = path.join(process.cwd(), "temp", `${videoId}-${job.id}`);
-      const inputPath = path.join(workDir, "input", fileName);
+      // Security: path.basename strips any ".." or directory components
+      const safeFileName = path.basename(fileName);
+      const inputPath = path.join(workDir, "input", safeFileName);
       const outputDir = path.join(workDir, "output");
 
       try {
@@ -70,6 +72,9 @@ export const startWorker = async () => {
 
         // 2. Download
         await job.updateProgress({ step: "downloading", progress: 10 });
+        // The key in MinIO is usually uploads/{videoId}/original based on video-service logic
+        // But here it seems to assume raw/{fileName}. 
+        // We will trust 'fileName' for the KEY (as it might be legacy) but Use SAFE path for local write.
         await downloadVideo(`raw/${fileName}`, inputPath);
         
         publishEvent(EXCHANGES.VIDEO, "transcode.progress", {
@@ -142,7 +147,9 @@ export const startWorker = async () => {
                 },
               });
             }
-          }
+          },
+          // Convert ms to seconds
+          timeout: Math.floor(JOB_TIMEOUT_MS / 1000), 
         });
         
         console.log(`Transcoding complete for ${videoId}. Resolutions: ${transcodeResult.resolutions.join(", ")}`);

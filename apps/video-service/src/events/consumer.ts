@@ -295,6 +295,12 @@ async function handleFailed(event: TranscodeFailedEvent): Promise<void> {
     return;
   }
 
+  // Race Condition Fix: If video is already READY, ignore this late failure message
+  if (video.processingStatus === "READY") {
+    console.warn(`Video ${videoId} is READY, ignoring late failure message`);
+    return;
+  }
+
   // If retryable, increment attempts (handled by BullMQ, we just log)
   // Update DB
   await prisma.video.update({

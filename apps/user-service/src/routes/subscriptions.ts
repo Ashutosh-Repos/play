@@ -5,6 +5,8 @@ import { authMiddleware } from "@repo/common";
 import { updateSubscriptionSchema } from "../schemas.js";
 import { emitSubscriptionCreated, emitSubscriptionDeleted } from "../events/publisher.js";
 
+import { requireActiveUser } from "../middleware/active.js";
+
 const router = Router();
 
 // GET /subscriptions - My subscriptions
@@ -56,7 +58,7 @@ router.get("/", authMiddleware(), async (req, res) => {
 });
 
 // POST /subscriptions/:channelId - Subscribe
-router.post("/:channelId", authMiddleware(), async (req, res) => {
+router.post("/:channelId", authMiddleware(), requireActiveUser(), async (req, res) => {
   try {
     const userId = req.user!.sub;
     const { channelId } = req.params;
@@ -154,7 +156,7 @@ router.get("/:channelId/status", authMiddleware(), async (req, res) => {
 });
 
 // DELETE /subscriptions/:channelId - Unsubscribe
-router.delete("/:channelId", authMiddleware(), async (req, res) => {
+router.delete("/:channelId", authMiddleware(), requireActiveUser(), async (req, res) => {
   try {
     const userId = req.user!.sub;
     const { channelId } = req.params;
@@ -193,7 +195,7 @@ router.delete("/:channelId", authMiddleware(), async (req, res) => {
 });
 
 // PATCH /subscriptions/:channelId - Update notification level
-router.patch("/:channelId", authMiddleware(), async (req, res) => {
+router.patch("/:channelId", authMiddleware(), requireActiveUser(), async (req, res) => {
   try {
     const userId = req.user!.sub;
     const { channelId } = req.params;

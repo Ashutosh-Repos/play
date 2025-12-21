@@ -5,6 +5,7 @@ import { authMiddleware, requireRole } from "@repo/common";
 import { verifyChannelSchema } from "@repo/validation";
 import { updateUserStatusSchema } from "../schemas.js";
 import { emitUserSuspended, emitChannelVerified } from "../events/publisher.js";
+import { invalidateUserCache } from "../lib/redis.js";
 
 const router = Router();
 
@@ -153,6 +154,9 @@ router.patch("/users/:id/status", authMiddleware(), requireRole("ADMIN"), async 
       },
     });
 
+    // Invalidate Redis Cache so other services pick up the change immediately
+    await invalidateUserCache(id!);
+
     // Emit event
     if (status === "SUSPENDED") {
       emitUserSuspended(id!, reason || "", until);
@@ -182,7 +186,6 @@ router.get("/channels", authMiddleware(), requireRole("ADMIN"), async (req, res)
           { displayName: { contains: search, mode: "insensitive" as const } },
         ],
       }),
-      deletedAt: null,
     };
 
     const totalCount = await prisma.channel.count({ where });

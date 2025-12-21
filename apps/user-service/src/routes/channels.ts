@@ -6,10 +6,12 @@ import { createChannelSchema, updateChannelSchema } from "@repo/validation";
 import { emitChannelCreated, emitChannelUpdated, emitChannelDeleted } from "../events/publisher.js";
 import { getCachedChannel, cacheChannel, invalidateChannelCache } from "../lib/redis.js";
 
+import { requireActiveUser } from "../middleware/active.js";
+
 const router = Router();
 
 // POST /channels - Create channel
-router.post("/", authMiddleware(), async (req, res) => {
+router.post("/", authMiddleware(), requireActiveUser(), async (req, res) => {
   try {
     const userId = req.user!.sub;
 
@@ -155,6 +157,7 @@ router.get("/:handle", async (req, res) => {
           select: {
             id: true,
             username: true,
+            status: true,
           },
         },
       },
@@ -164,6 +167,14 @@ router.get("/:handle", async (req, res) => {
       return res.status(404).json({
         success: false,
         error: { code: "NOT_FOUND", message: "Channel not found" },
+      });
+    }
+
+    // Hide channel if user is not ACTIVE
+    if (channel.user?.status !== "ACTIVE") {
+      return res.status(404).json({
+        success: false,
+        error: { code: "NOT_FOUND", message: "Channel unavailable" },
       });
     }
 
@@ -181,7 +192,7 @@ router.get("/:handle", async (req, res) => {
 });
 
 // PATCH /channels/:handle - Update channel (owner only)
-router.patch("/:handle", authMiddleware(), async (req, res) => {
+router.patch("/:handle", authMiddleware(), requireActiveUser(), async (req, res) => {
   try {
     const userId = req.user!.sub;
     const { handle } = req.params;
@@ -336,7 +347,7 @@ router.get("/:handle/subscribers", authMiddleware(), async (req, res) => {
 });
 
 // DELETE /channels/:handle - Delete channel (owner only)
-router.delete("/:handle", authMiddleware(), async (req, res) => {
+router.delete("/:handle", authMiddleware(), requireActiveUser(), async (req, res) => {
   try {
     const userId = req.user!.sub;
     const { handle } = req.params;

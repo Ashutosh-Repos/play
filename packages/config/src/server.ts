@@ -33,6 +33,7 @@ const serverEnvSchema = z.object({
     .string()
     .transform((v) => v === "true")
     .default("false"),
+  S3_WEBHOOK_SECRET: z.string().default("play-webhook-secret"),
 
   // Meilisearch
   MEILISEARCH_URL: z.string().url().default("http://localhost:7700"),

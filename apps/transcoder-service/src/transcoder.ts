@@ -28,6 +28,7 @@ export interface TranscodeOptions {
   outputDir: string;
   sourceHeight: number;        // Pass source height to determine resolutions
   onProgress?: (progress: number) => void;
+  timeout?: number; // Timeout in seconds
 }
 
 export interface TranscodeResult {
@@ -55,7 +56,7 @@ export function getTargetResolutions(sourceHeight: number): Resolution[] {
  */
 export const transcodeVideo = (options: TranscodeOptions): Promise<TranscodeResult> => {
   return new Promise((resolve, reject) => {
-    const { inputPath, outputDir, sourceHeight, onProgress } = options;
+    const { inputPath, outputDir, sourceHeight, onProgress, timeout } = options;
     
     // Determine target resolutions based on source
     const resolutions = getTargetResolutions(sourceHeight);
@@ -73,6 +74,11 @@ export const transcodeVideo = (options: TranscodeOptions): Promise<TranscodeResu
     console.log(`Starting transcoding for ${inputPath} to ${outputDir}`);
 
     let command = ffmpeg(inputPath);
+
+    // Apply timeout if specified
+    if (timeout) {
+      command.timeout(timeout); 
+    }
     
     // Add each resolution as an output
     for (const res of resolutions) {
@@ -113,7 +119,7 @@ export const transcodeVideo = (options: TranscodeOptions): Promise<TranscodeResu
       })
       .on("error", (err, stdout, stderr) => {
         console.error("Transcoding failed:", err.message);
-        console.error("FFmpeg stderr:", stderr);
+        if (stderr) console.error("FFmpeg stderr:", stderr);
         reject(err);
       })
       .on("end", () => {

@@ -43,32 +43,30 @@ export const createComment = async (req: Request, res: Response) => {
       }
     }
 
-    const comment = await prisma.comment.create({
-      data: {
-        content: sanitizedContent, // Use sanitized content
-        videoId,
-        userId,
-        parentId,
-      },
-      include: {
-        user: { select: { id: true, username: true, avatarUrl: true } }
-      }
-    });
-
-    // Increment comment count on Video
-    // TODO: Move to event consumer for scalability, but fine for now
-    await prisma.video.update({
-      where: { id: videoId },
-      data: { commentCount: { increment: 1 } }
-    });
-    
-    // Increment reply count on parent if reply
-    if (parentId) {
-        await prisma.comment.update({
-            where: { id: parentId },
-            data: { replyCount: { increment: 1 } }
-        });
-    }
+    // Transaction: Create comment + Increment Video count + Increment Parent reply count
+    const [comment] = await prisma.$transaction([
+      prisma.comment.create({
+        data: {
+          content: sanitizedContent, // Use sanitized content
+          videoId,
+          userId,
+          parentId,
+        },
+        include: {
+          user: { select: { id: true, username: true, avatarUrl: true } }
+        }
+      }),
+      prisma.video.update({
+        where: { id: videoId },
+        data: { commentCount: { increment: 1 } }
+      }),
+      ...(parentId ? [
+        prisma.comment.update({
+          where: { id: parentId },
+          data: { replyCount: { increment: 1 } }
+        })
+      ] : [])
+    ]);
 
     res.status(201).json(comment);
   } catch (error) {
@@ -194,27 +192,26 @@ export const deleteComment = async (req: Request, res: Response) => {
             return res.json({ success: true, message: "Already deleted" });
         }
 
-        // Soft Delete
-        await prisma.comment.update({
-            where: { id: commentId },
-            data: { 
-                status: "REMOVED",
-                deletedAt: new Date()
-            }
-        });
-
-        // Decrement counts safely
-        await prisma.video.update({
-            where: { id: comment.videoId },
-            data: { commentCount: { decrement: 1 } }
-        });
-        
-        if (comment.parentId) {
-            await prisma.comment.update({
-                where: { id: comment.parentId },
-                data: { replyCount: { decrement: 1 } }
-            });
-        }
+        // Transaction: Soft Delete + Decrement counts
+        await prisma.$transaction([
+            prisma.comment.update({
+                where: { id: commentId },
+                data: { 
+                    status: "REMOVED",
+                    deletedAt: new Date()
+                }
+            }),
+            prisma.video.update({
+                where: { id: comment.videoId },
+                data: { commentCount: { decrement: 1 } }
+            }),
+            ...(comment.parentId ? [
+                prisma.comment.update({
+                    where: { id: comment.parentId },
+                    data: { replyCount: { decrement: 1 } }
+                })
+            ] : [])
+        ]);
         
         res.json({ success: true });
     } catch (error) {

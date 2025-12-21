@@ -3,36 +3,18 @@
 import { Router } from "express";
 import { prisma } from "@repo/database";
 import { updateVideoUploadSchema, updateVideoTranscodeSchema } from "../schemas.js";
-import { addTranscodeJob } from "../queue/transcoding.js";
+import { emitVideoUploaded } from "../events/publisher.js";
+import { verifyServiceToken } from "@repo/common";
 
 const router = Router();
 
-// Middleware to verify internal service token
-function requireServiceAuth(req: any, res: any, next: any) {
-  const token = req.headers.authorization?.replace("Bearer ", "");
-  const expectedToken = process.env.INTERNAL_SERVICE_TOKEN;
 
-  if (!expectedToken) {
-    console.error("INTERNAL_SERVICE_TOKEN not configured");
-    return res.status(500).json({
-      success: false,
-      error: { code: "CONFIG_ERROR", message: "Service not configured" },
-    });
-  }
-
-  if (token !== expectedToken) {
-    return res.status(401).json({
-      success: false,
-      error: { code: "UNAUTHORIZED", message: "Invalid service token" },
-    });
-  }
-
-  next();
-}
+// Middleware to protect internal routes
+router.use(verifyServiceToken);
 
 // GET /internal/videos/:id/verify-owner - Verify video ownership
 // Called by ingest-service before accepting upload
-router.get("/:id/verify-owner", requireServiceAuth, async (req, res) => {
+router.get("/:id/verify-owner", async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.headers["x-user-id"] as string;
@@ -82,7 +64,7 @@ router.get("/:id/verify-owner", requireServiceAuth, async (req, res) => {
 
 // PATCH /internal/videos/:id/upload - Update video with upload info
 // Called by ingest-service when upload completes
-router.patch("/:id/upload", requireServiceAuth, async (req, res) => {
+router.patch("/:id/upload", async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -121,9 +103,23 @@ router.patch("/:id/upload", requireServiceAuth, async (req, res) => {
       },
     });
 
-    // If status is PROCESSING, add transcode job
+    // If status is PROCESSING, emit video.uploaded event to trigger transcoding
     if (status === "PROCESSING" && originalFilePath) {
-      await addTranscodeJob(id, originalFilePath);
+      // Need userId for the event
+      const videoOwner = await prisma.video.findUnique({
+          where: { id },
+          select: { channel: { select: { userId: true } } }
+      });
+      
+      if (videoOwner) {
+          emitVideoUploaded(
+              id, 
+              videoOwner.channel.userId, 
+              originalFilePath,
+              Number(originalFileSize || 0), 
+              originalMimeType || "video/mp4"
+          );
+      }
     }
 
     res.json({ success: true, data: { message: "Upload info updated" } });
@@ -138,7 +134,7 @@ router.patch("/:id/upload", requireServiceAuth, async (req, res) => {
 
 // PATCH /internal/videos/:id/transcode - Update video with transcode results
 // Called by consumer when transcoder completes (alternative to event)
-router.patch("/:id/transcode", requireServiceAuth, async (req, res) => {
+router.patch("/:id/transcode", async (req, res) => {
   try {
     const { id } = req.params;
 

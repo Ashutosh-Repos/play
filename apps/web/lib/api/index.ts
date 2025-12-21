@@ -9,8 +9,8 @@ const SERVICES = {
   video: process.env.VIDEO_SERVICE_URL || "http://localhost:4003",
   engagement: process.env.ENGAGEMENT_SERVICE_URL || "http://localhost:4006",
   feed: process.env.FEED_SERVICE_URL || "http://localhost:4010",
-  search: process.env.SEARCH_SERVICE_URL || "http://localhost:4007",
-  notification: process.env.NOTIFICATION_SERVICE_URL || "http://localhost:4008",
+  search: process.env.SEARCH_SERVICE_URL || "http://localhost:4009",
+  notification: process.env.NOTIFICATION_SERVICE_URL || "http://localhost:4011",
 } as const;
 
 type ServiceName = keyof typeof SERVICES;

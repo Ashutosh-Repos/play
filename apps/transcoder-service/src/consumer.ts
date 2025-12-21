@@ -70,7 +70,17 @@ async function handleMessage(msg: ConsumeMessage | null): Promise<void> {
   if (!msg) return;
 
   try {
-    const content = JSON.parse(msg.content.toString()) as VideoUploadedEvent;
+    let content: VideoUploadedEvent;
+    try {
+      content = JSON.parse(msg.content.toString()) as VideoUploadedEvent;
+    } catch (parseError) {
+      console.error("❌ Failed to parse message JSON:", parseError);
+      // Poison Pill: duplicate/bad message will loop forever if we Nack.
+      // Ack it to remove from queue (or send to DLQ if configured).
+      channel.ack(msg);
+      return;
+    }
+
     console.log("📥 Received message:", content.type);
 
     // Verify event type

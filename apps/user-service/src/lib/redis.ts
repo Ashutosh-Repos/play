@@ -67,3 +67,15 @@ export async function cacheSubscriptionStatus(userId: string, channelId: string,
 export async function invalidateSubscriptionCache(userId: string, channelId: string) {
   await redis.del(`sub:${userId}:${channelId}`);
 }
+
+// Event Idempotency
+export async function checkIdempotency(eventId: string): Promise<boolean> {
+  const processed = await redis.get(`idempotency:${eventId}`);
+  return !!processed;
+}
+
+export async function markEventProcessed(eventId: string) {
+  // Store for 24 hours (86400 seconds)
+  // This covers most retry loops and network glitches
+  await redis.set(`idempotency:${eventId}`, "true", "EX", 86400);
+}

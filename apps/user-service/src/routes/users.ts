@@ -5,6 +5,8 @@ import { authMiddleware } from "@repo/common";
 import { updateProfileSchema, updateNotificationSettingsSchema } from "../schemas.js";
 import { emitUserUpdated } from "../events/publisher.js";
 
+import { requireActiveUser } from "../middleware/active.js";
+
 const router = Router();
 
 // GET /users/me - Current user profile with channel
@@ -58,7 +60,7 @@ router.get("/me", authMiddleware(), async (req, res) => {
 });
 
 // PATCH /users/me - Update profile
-router.patch("/me", authMiddleware(), async (req, res) => {
+router.patch("/me", authMiddleware(), requireActiveUser(), async (req, res) => {
   try {
     const userId = req.user!.sub;
 

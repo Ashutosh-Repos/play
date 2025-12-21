@@ -21,6 +21,7 @@ export const config = {
     secretKey: serverEnv.MINIO_SECRET_KEY,
     bucket: serverEnv.MINIO_BUCKET,
     useSSL: serverEnv.MINIO_USE_SSL,
+    webhookSecret: serverEnv.S3_WEBHOOK_SECRET, // Used for validating S3 events
   },
   
   // JWT

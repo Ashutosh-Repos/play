@@ -4,7 +4,8 @@ import { Router } from "express";
 import { prisma } from "@repo/database";
 import { extractVideoIdFromPath, getObjectStat } from "../lib/storage.js";
 import { cacheVideoStatus, publishToVideoChannel } from "../lib/redis.js";
-import { addTranscodeJob } from "../queue/transcoding.js";
+import { emitVideoUploaded } from "../events/publisher.js";
+import { config } from "../config.js";
 
 const router = Router();
 
@@ -28,6 +29,22 @@ interface S3Event {
  */
 router.post("/", async (req, res) => {
   try {
+    // 1. Security Check: Validation Token
+    const token = req.query.token as string || req.headers.authorization?.replace("Bearer ", "");
+    const secret = config.minio.webhookSecret;
+
+    if (!secret) {
+        console.error("S3_WEBHOOK_SECRET not configured");
+        console.warn("⛔ Suspicious S3 event - Invalid or missing token");
+        // Return 200 to confuse attackers / prevent S3 retry loops, but do NOTHING.
+        return res.status(200).json({ ok: true }); 
+    }
+
+    if (token !== secret) {
+       console.warn("⛔ Suspicious S3 event - Invalid or missing token");
+       // Return 200 to confuse attackers / prevent S3 retry loops, but do NOTHING.
+       return res.status(200).json({ ok: true }); 
+    }
     const event = req.body as S3Event;
     
     // Handle different event formats (MinIO can send in different ways)
@@ -91,8 +108,24 @@ router.post("/", async (req, res) => {
       return res.status(200).json({ ok: true });
     }
     
-    // Add transcode job
-    await addTranscodeJob(videoId, objectKey);
+    // Fetch video to get userId for event
+    const video = await prisma.video.findUnique({
+      where: { id: videoId },
+      select: { channel: { select: { userId: true } } }
+    });
+
+    if (video) {
+        // Publish event to RabbitMQ (Transcoder service listens to this)
+        emitVideoUploaded(
+            videoId, 
+            video.channel.userId, 
+            objectKey, 
+            objectSize || 0, 
+            "video/mp4" // Default or extract from key
+        );
+    } else {
+        console.warn(`Could not find video ${videoId} for event emission`);
+    }
     
     // Update cache
     await cacheVideoStatus(videoId, {

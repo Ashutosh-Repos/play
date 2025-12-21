@@ -28,9 +28,18 @@ export const toggleReaction = async (req: Request, res: Response) => {
     if (existing) {
       if (existing.type === type) {
         // Toggle OFF (Remove reaction)
-        await prisma.videoReaction.delete({
-          where: { id: existing.id },
-        });
+        try {
+          await prisma.videoReaction.delete({
+            where: { id: existing.id },
+          });
+        } catch (error: any) {
+             // Handle Race Condition: Already deleted by parallel request
+             if (error.code === "P2025") {
+                 return res.json({ status: "removed", type: null });
+             }
+             throw error;
+        }
+        
         // We might want to emit 'video.unliked' or just generic 'video.reaction.updated'
         // For now, let's keep it simple.
         

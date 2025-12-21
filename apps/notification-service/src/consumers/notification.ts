@@ -69,8 +69,6 @@ async function handleVideoPublished(rawPayload: any) {
     const { videoId, channelId, title } = result.data;
     
     // 1. Get Channel Info 
-    // ...
-    
     const channel = await prisma.channel.findUnique({
         where: { id: channelId },
         select: { displayName: true, avatarUrl: true }
@@ -78,31 +76,41 @@ async function handleVideoPublished(rawPayload: any) {
     
     if (!channel) return;
 
-    // 2. Get Subscribers
-    // MVP: This findAll will break at scale. 
-    // Optimization 1 : Chunking / Cursors
-    // We will batch processed to avoid memory explosion, but here we just implement a safer batch loop request if we were using a cursor.
-    // For now, simpler optimization: Batch the writes.
-    
-    const subs = await prisma.subscription.findMany({
-        where: { channelId, notificationLevel: "ALL" }, 
-        select: { subscriberId: true }
-    });
+    // 2. Notify Subscribers in Chunks (Cursor-based Pagination)
+    const BATCH_SIZE = 1000;
+    let cursor: string | undefined = undefined;
+    let hasMore = true;
+    let totalNotified = 0;
 
-    console.log(`📢 Notifying ${subs.length} subs about video ${videoId}`);
+    console.log(`📢 Starting notification broadcast for video ${videoId} from ${channel.displayName}`);
 
     const message = `${channel.displayName} uploaded: ${title}`;
 
-    // 3. Dispatch Notifications in Batches of 50
-    const BATCH_SIZE = 50;
-    
-    for (let i = 0; i < subs.length; i += BATCH_SIZE) {
-        const batch = subs.slice(i, i + BATCH_SIZE);
+    while (hasMore) {
+        // Fetch batch
+        const subs = await prisma.subscription.findMany({
+            where: { channelId, notificationLevel: "ALL" },
+            select: { id: true, subscriberId: true },
+            take: BATCH_SIZE,
+            skip: cursor ? 1 : 0,
+            cursor: cursor ? { id: cursor } : undefined,
+            orderBy: { id: 'asc' } // Stable sort for cursor
+        });
+
+        if (subs.length === 0) {
+            hasMore = false;
+            break;
+        }
+
+        // Update cursor for next iteration
+        cursor = subs[subs.length - 1].id;
         
-        await Promise.all(batch.map(async (sub: typeof batch[0]) => {
+        // Process batch in parallel (Bounded concurrency within batch)
+        await Promise.all(subs.map(async (sub: { id: string; subscriberId: string }) => {
             try {
                 // Idempotency Check: Don't insert if duplicates exist for this video+user+type
-                // This is a "read-before-write" check. Ideally, DB unique constraint is better.
+                // Ideally, DB unique constraint (userId_videoId_type) should handle this.
+                // We'll use findFirst for now as per original design.
                 const exists = await prisma.notification.findFirst({
                     where: {
                         userId: sub.subscriberId,
@@ -129,11 +137,20 @@ async function handleVideoPublished(rawPayload: any) {
 
                 // WebSocket Push
                 pushNotification(sub.subscriberId, "notification", notif);
+                totalNotified++;
             } catch(e) { 
                 console.error("Failed to notify sub", sub.subscriberId, e);
             }
         }));
+
+        console.log(`📢 Processed batch of ${subs.length} subs. Total so far: ${totalNotified}`);
+
+        if (subs.length < BATCH_SIZE) {
+            hasMore = false;
+        }
     }
+
+    console.log(`✅ Finished notifying ${totalNotified} subscribers for video ${videoId}`);
 }
 
 async function handleCommentCreated(rawPayload: any) {

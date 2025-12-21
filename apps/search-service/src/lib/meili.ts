@@ -11,6 +11,8 @@ export const meili = new MeiliSearch({
 
 export const INDEX_VIDEOS = "videos";
 
+
+
 // Initialize Index Settings (Searchable fields, etc.)
 export async function configureMeili() {
   try {
