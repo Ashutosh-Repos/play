@@ -1,0 +1,23 @@
+{
+  "Statement": [
+    {
+      "Action": ["s3:GetObject"],
+      "Effect": "Allow",
+      "Principal": {"AWS": ["*"]},
+      "Resource": ["arn:aws:s3:::play-videos/videos/*"]
+    },
+    {
+      "Action": ["s3:GetObject"],
+      "Effect": "Allow",
+      "Principal": {"AWS": ["*"]},
+      "Resource": ["arn:aws:s3:::play-videos/avatars/*"]
+    },
+    {
+      "Action": ["s3:GetObject"],
+      "Effect": "Allow",
+      "Principal": {"AWS": ["*"]},
+      "Resource": ["arn:aws:s3:::play-videos/channels/*"]
+    }
+  ],
+  "Version": "2012-10-17"
+}

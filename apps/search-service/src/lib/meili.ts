@@ -10,49 +10,37 @@ export const meili = new MeiliSearch({
 });
 
 export const INDEX_VIDEOS = "videos";
-
-
+export const INDEX_CHANNELS = "channels";
 
 // Initialize Index Settings (Searchable fields, etc.)
 export async function configureMeili() {
   try {
-    const index = meili.index(INDEX_VIDEOS);
-    
-    // Create index if not exists (lazy check)
-    // Actually, updateSettings will create it if needed usually, or we can use getOrCreateIndex
-    
-    console.log("⚙️ Configuring Meilisearch Index...");
-    
-    await index.updateFilterableAttributes([
+    // --- Videos Index ---
+    const videos = meili.index(INDEX_VIDEOS);
+    console.log("⚙️ Configuring Meilisearch 'videos' Index...");
+    await videos.updateFilterableAttributes([
         "visibility", 
         "channelId", 
         "tags", 
         "categoryId",
         "processingStatus"
     ]);
-
-    await index.updateSortableAttributes([
-        "createdAt", 
-        "viewCount",
-        "likeCount"
+    await videos.updateSortableAttributes(["createdAt", "viewCount", "likeCount"]);
+    await videos.updateSearchableAttributes(["title", "description", "tags", "channelName"]);
+    await videos.updateRankingRules([
+        "words", "typo", "proximity", "attribute", "sort", "exactness",
+        "viewCount:desc"
     ]);
 
-    await index.updateSearchableAttributes([
-        "title",
-        "description",
-        "tags",
-        "channelName"
-    ]);
-    
-    // Custom Ranking: Popularity (viewCount) matters
-    await index.updateRankingRules([
-        "words",
-        "typo",
-        "proximity",
-        "attribute",
-        "sort",
-        "exactness",
-        "viewCount:desc" // Custom rule: Boost popular videos
+    // --- Channels Index ---
+    const channels = meili.index(INDEX_CHANNELS);
+    console.log("⚙️ Configuring Meilisearch 'channels' Index...");
+    await channels.updateFilterableAttributes(["isVerified"]);
+    await channels.updateSortableAttributes(["createdAt", "subscriberCount"]);
+    await channels.updateSearchableAttributes(["handle", "displayName", "description"]);
+    await channels.updateRankingRules([
+        "words", "typo", "proximity", "attribute", "sort", "exactness",
+        "subscriberCount:desc" // Boost popular channels
     ]);
 
     console.log("✅ Meilisearch Configured!");

@@ -88,7 +88,7 @@ async function handleVideoPublished(rawPayload: any) {
 
     while (hasMore) {
         // Fetch batch
-        const subs = await prisma.subscription.findMany({
+        const subs: { id: string; subscriberId: string }[] = await prisma.subscription.findMany({
             where: { channelId, notificationLevel: "ALL" },
             select: { id: true, subscriberId: true },
             take: BATCH_SIZE,
@@ -103,7 +103,7 @@ async function handleVideoPublished(rawPayload: any) {
         }
 
         // Update cursor for next iteration
-        cursor = subs[subs.length - 1].id;
+        cursor = subs[subs.length - 1]!.id;
         
         // Process batch in parallel (Bounded concurrency within batch)
         await Promise.all(subs.map(async (sub: { id: string; subscriberId: string }) => {

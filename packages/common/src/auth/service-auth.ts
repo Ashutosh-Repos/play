@@ -56,8 +56,15 @@ export function verifyServiceToken(req: Request, res: Response, next: NextFuncti
     });
   }
 
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      error: { code: "UNAUTHORIZED", message: "Invalid token format" }
+    });
+  }
+
   try {
-    const decoded = jwt.verify(token, SERVICE_SECRET) as ServiceTokenPayload;
+    const decoded = jwt.verify(token, SERVICE_SECRET!) as unknown as ServiceTokenPayload;
     
     if (decoded.role !== "service" || decoded.type !== "internal") {
         return res.status(403).json({

@@ -77,7 +77,7 @@ export const transcodeVideo = (options: TranscodeOptions): Promise<TranscodeResu
 
     // Apply timeout if specified
     if (timeout) {
-      command.timeout(timeout); 
+      (command as any).timeout(timeout); 
     }
     
     // Add each resolution as an output
