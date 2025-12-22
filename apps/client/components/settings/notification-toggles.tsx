@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import { updateNotificationSettings } from "@/app/actions/settings";
 
 interface NotificationSettings {
   newVideos: boolean;
@@ -58,21 +59,12 @@ export function NotificationToggles({ settings }: NotificationTogglesProps) {
 
   async function updateSetting(key: string, value: boolean) {
     startTransition(async () => {
-      try {
-        const res = await fetch("/api/settings/notifications", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ [key]: value }),
-        });
-
-        if (res.ok) {
-          toast.success("Preferences saved");
-          router.refresh();
-        } else {
-          toast.error("Failed to save preferences");
-        }
-      } catch {
-        toast.error("Failed to save preferences");
+      const result = await updateNotificationSettings({ [key]: value });
+      if (result.success) {
+        toast.success("Preferences saved");
+        router.refresh();
+      } else {
+        toast.error(result.error || "Failed to save preferences");
       }
     });
   }

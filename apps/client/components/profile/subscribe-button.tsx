@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { subscribe, unsubscribe } from "@/app/actions/user";
+import { subscribe, unsubscribe } from "@/app/actions/subscription";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { IconLoader2, IconBell, IconBellOff } from "@tabler/icons-react";

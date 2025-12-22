@@ -7,6 +7,55 @@ import { emitUserDeleted, emitUserRestored } from "../events/publisher.js";
 
 const router = Router();
 
+// GET /account/info - Account info (hasPassword, cooldown)
+router.get("/info", authMiddleware(), async (req, res) => {
+  try {
+    const userId = req.user!.sub;
+
+    // Get user info
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { passwordHash: true, username: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: { code: "NOT_FOUND", message: "User not found" },
+      });
+    }
+
+    // Check for recent username change (rate limit: 30 days)
+    const recentUsernameChange = await prisma.auditLog.findFirst({
+      where: {
+        targetUserId: userId,
+        action: "USERNAME_CHANGE",
+        createdAt: { gt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const usernameCooldownUntil = recentUsernameChange
+      ? new Date(recentUsernameChange.createdAt.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      : null;
+
+    res.json({
+      success: true,
+      data: {
+        hasPassword: !!user.passwordHash,
+        username: user.username,
+        usernameCooldownUntil,
+      },
+    });
+  } catch (error) {
+    console.error("Get account info error:", error);
+    res.status(500).json({
+      success: false,
+      error: { code: "INTERNAL_ERROR", message: "Failed to get account info" },
+    });
+  }
+});
+
 // GET /account/sessions - List active sessions
 router.get("/sessions", authMiddleware(), async (req, res) => {
   try {

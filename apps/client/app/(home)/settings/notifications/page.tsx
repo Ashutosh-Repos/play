@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { prisma } from "@repo/database";
+import { settingsService } from "@/lib/service-client";
 import { NotificationToggles } from "@/components/settings/notification-toggles";
 
 export default async function NotificationsPage() {
@@ -9,16 +9,21 @@ export default async function NotificationsPage() {
     return null;
   }
 
-  // Get or create notification settings
-  let settings = await prisma.notificationSettings.findUnique({
-    where: { userId: session.user.id },
-  });
-
-  if (!settings) {
-    settings = await prisma.notificationSettings.create({
-      data: { userId: session.user.id },
-    });
-  }
+  // Use service instead of direct Prisma
+  const result = await settingsService.getNotifications();
+  
+  // Default settings if service call fails
+  const settings = result.success && result.data ? result.data : {
+    newVideos: true,
+    liveStreams: true,
+    comments: true,
+    replies: true,
+    likes: true,
+    subscribers: true,
+    mentions: true,
+    emailEnabled: true,
+    pushEnabled: true,
+  };
 
   return (
     <div className="space-y-6">
@@ -29,19 +34,7 @@ export default async function NotificationsPage() {
         </p>
       </div>
 
-      <NotificationToggles
-        settings={{
-          newVideos: settings.newVideos,
-          liveStreams: settings.liveStreams,
-          comments: settings.comments,
-          replies: settings.replies,
-          likes: settings.likes,
-          subscribers: settings.subscribers,
-          mentions: settings.mentions,
-          emailEnabled: settings.emailEnabled,
-          pushEnabled: settings.pushEnabled,
-        }}
-      />
+      <NotificationToggles settings={settings} />
     </div>
   );
 }

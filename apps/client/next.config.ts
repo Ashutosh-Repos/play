@@ -8,6 +8,15 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "avatar.iran.liara.run",
       },
+      {
+        protocol: "http",
+        hostname: "localhost",
+        port: "9000",
+      },
+      {
+        protocol: "https",
+        hostname: "api.dicebear.com",
+      },
     ],
   },
 };

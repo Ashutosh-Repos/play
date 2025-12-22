@@ -18,6 +18,12 @@ import accountRouter from "./routes/account.js";
 import settingsRouter from "./routes/settings.js";
 import adminRouter from "./routes/admin.js";
 
+// Handle BigInt serialization
+// @ts-ignore
+BigInt.prototype.toJSON = function () {
+  return this.toString();
+};
+
 // Events
 import { connectRabbitMQ } from "./events/publisher.js";
 import { startConsumer } from "./events/consumer.js";

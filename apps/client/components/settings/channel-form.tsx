@@ -3,8 +3,9 @@
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useTransition } from "react";
-import { updateChannel, type UpdateChannelInput } from "@/app/actions/channel";
+import { useTransition, useState } from "react";
+import { useRouter } from "next/navigation";
+import { updateChannel, deleteChannel, type UpdateChannelInput } from "@/app/actions/channel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,8 +13,92 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ImageUpload } from "@/components/ui/image-upload";
+import { ChannelPreview } from "./channel-preview";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { IconLoader2, IconPlus, IconTrash, IconLink, IconBrandYoutube } from "@tabler/icons-react";
+import { IconLoader2, IconPlus, IconTrash, IconLink, IconBrandYoutube, IconAlertTriangle } from "@tabler/icons-react";
+
+// Delete channel button with confirmation
+function DeleteChannelButton({ handle }: { handle: string }) {
+  const [isPending, startTransition] = useTransition();
+  const [confirmHandle, setConfirmHandle] = useState("");
+  const [open, setOpen] = useState(false);
+  const router = useRouter();
+
+  const canDelete = confirmHandle === handle;
+
+  function handleDelete() {
+    startTransition(async () => {
+      const result = await deleteChannel();
+      if (result.success) {
+        toast.success("Channel deleted successfully");
+        setOpen(false);
+        router.push("/settings/channel");
+        router.refresh();
+      } else {
+        toast.error(result.error || "Failed to delete channel");
+      }
+    });
+  }
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger asChild>
+        <Button variant="destructive" size="sm">
+          <IconTrash className="mr-2 h-4 w-4" />
+          Delete Channel
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <IconAlertTriangle className="h-5 w-5 text-destructive" />
+            Delete Channel
+          </AlertDialogTitle>
+          <AlertDialogDescription className="space-y-3">
+            <p>
+              This action <strong>cannot be undone</strong>. This will permanently delete your
+              channel <strong>@{handle}</strong> and remove all videos, subscribers, and data.
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="confirmHandle" className="text-foreground">
+                Type <strong>@{handle}</strong> to confirm:
+              </Label>
+              <Input
+                id="confirmHandle"
+                value={confirmHandle}
+                onChange={(e) => setConfirmHandle(e.target.value.replace("@", ""))}
+                placeholder={handle}
+                className="font-mono"
+              />
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <Button
+            variant="destructive"
+            onClick={handleDelete}
+            disabled={!canDelete || isPending}
+          >
+            {isPending && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Delete Channel
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
 
 const updateChannelSchema = z.object({
   displayName: z.string().min(1, "Display name is required").max(50, "Max 50 characters"),
@@ -67,7 +152,9 @@ export function ChannelForm({ defaultValues }: ChannelFormProps) {
     name: "links",
   });
 
-  const descriptionValue = form.watch("description") || "";
+  // Watch form values for live preview
+  const watchedValues = form.watch();
+  const descriptionValue = watchedValues.description || "";
   const descriptionRemaining = 1000 - descriptionValue.length;
 
   async function onSubmit(data: UpdateChannelInput) {
@@ -90,7 +177,9 @@ export function ChannelForm({ defaultValues }: ChannelFormProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="grid gap-6 lg:grid-cols-3">
+      {/* Main Form - Takes 2 columns */}
+      <div className="lg:col-span-2 space-y-6">
       {/* Branding */}
       <Card>
         <CardHeader>
@@ -250,6 +339,39 @@ export function ChannelForm({ defaultValues }: ChannelFormProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Danger Zone */}
+      <Card className="border-destructive/50">
+        <CardHeader>
+          <CardTitle className="text-destructive">Danger Zone</CardTitle>
+          <CardDescription>Irreversible and destructive actions.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Delete this channel</p>
+              <p className="text-sm text-muted-foreground">
+                Once deleted, all videos and subscribers will be permanently removed.
+              </p>
+            </div>
+            <DeleteChannelButton handle={defaultValues.handle} />
+          </div>
+        </CardContent>
+      </Card>
+      </div>
+
+      {/* Preview Sidebar - Hidden on mobile */}
+      <div className="hidden lg:block">
+        <div className="sticky top-20">
+          <ChannelPreview
+            displayName={watchedValues.displayName || defaultValues.displayName}
+            handle={defaultValues.handle}
+            description={watchedValues.description}
+            avatarUrl={watchedValues.avatarUrl || defaultValues.avatarUrl}
+            bannerUrl={watchedValues.bannerUrl || defaultValues.bannerUrl}
+          />
+        </div>
+      </div>
     </div>
   );
 }

@@ -399,4 +399,64 @@ router.delete("/:handle", authMiddleware(), requireActiveUser(), async (req, res
   }
 });
 
+// GET /channels/:handle/videos - List public videos for a channel
+router.get("/:handle/videos", async (req, res) => {
+  try {
+    const { handle } = req.params;
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
+    const cursor = req.query.cursor as string | undefined;
+
+    // Get channel
+    const channel = await prisma.channel.findUnique({
+      where: { handle: handle.toLowerCase(), deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!channel) {
+      return res.status(404).json({
+        success: false,
+        error: { code: "NOT_FOUND", message: "Channel not found" },
+      });
+    }
+
+    // Get public videos
+    const videos = await prisma.video.findMany({
+      where: {
+        channelId: channel.id,
+        visibility: "PUBLIC",
+        deletedAt: null,
+      },
+      take: limit + 1,
+      ...(cursor && { cursor: { id: cursor }, skip: 1 }),
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        thumbnailUrl: true,
+        duration: true,
+        viewCount: true,
+        createdAt: true,
+        publishedAt: true,
+      },
+    });
+
+    const hasMore = videos.length > limit;
+    const items = hasMore ? videos.slice(0, -1) : videos;
+
+    res.json({
+      success: true,
+      data: {
+        items,
+        nextCursor: hasMore ? items[items.length - 1]?.id : null,
+      },
+    });
+  } catch (error) {
+    console.error("Get channel videos error:", error);
+    res.status(500).json({
+      success: false,
+      error: { code: "INTERNAL_ERROR", message: "Failed to get videos" },
+    });
+  }
+});
+
 export default router;

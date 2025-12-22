@@ -1,9 +1,9 @@
 "use server";
 
 import { auth } from "@/lib/auth";
-import { prisma } from "@repo/database";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { channelService } from "@/lib/service-client";
 
 const createChannelSchema = z.object({
   handle: z
@@ -17,6 +17,9 @@ const createChannelSchema = z.object({
 
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
 
+/**
+ * Create a new channel for the current user
+ */
 export async function createChannel(data: CreateChannelInput) {
   const session = await auth();
 
@@ -29,44 +32,20 @@ export async function createChannel(data: CreateChannelInput) {
     return { success: false, error: parsed.error.issues[0]?.message || "Invalid input" };
   }
 
-  const handle = parsed.data.handle.toLowerCase();
+  // Call user-service to create channel (handles uniqueness + events)
+  const result = await channelService.create({
+    handle: parsed.data.handle.toLowerCase(),
+    displayName: parsed.data.displayName,
+    description: parsed.data.description,
+  });
 
-  try {
-    // Check if user already has a channel
-    const existingChannel = await prisma.channel.findUnique({
-      where: { userId: session.user.id },
-    });
-
-    if (existingChannel) {
-      return { success: false, error: "You already have a channel" };
-    }
-
-    // Check if handle is taken
-    const existingHandle = await prisma.channel.findUnique({
-      where: { handle },
-    });
-
-    if (existingHandle) {
-      return { success: false, error: "Handle already taken" };
-    }
-
-    // Create channel
-    const channel = await prisma.channel.create({
-      data: {
-        userId: session.user.id,
-        handle,
-        displayName: parsed.data.displayName,
-        description: parsed.data.description || null,
-      },
-    });
-
-    revalidatePath("/settings/channel");
-    revalidatePath(`/u/${session.user.username}`);
-    return { success: true, data: { channelId: channel.id, handle: channel.handle } };
-  } catch (error) {
-    console.error("Create channel error:", error);
-    return { success: false, error: "Failed to create channel" };
+  if (!result.success) {
+    return { success: false, error: result.error?.message || "Failed to create channel" };
   }
+
+  revalidatePath("/settings/channel");
+  revalidatePath(`/u/${session.user.username}`);
+  return { success: true, data: result.data };
 }
 
 const updateChannelSchema = z.object({
@@ -89,6 +68,9 @@ const updateChannelSchema = z.object({
 
 export type UpdateChannelInput = z.infer<typeof updateChannelSchema>;
 
+/**
+ * Update the current user's channel
+ */
 export async function updateChannel(data: UpdateChannelInput) {
   const session = await auth();
 
@@ -101,37 +83,35 @@ export async function updateChannel(data: UpdateChannelInput) {
     return { success: false, error: parsed.error.issues[0]?.message || "Invalid input" };
   }
 
-  try {
-    const channel = await prisma.channel.findUnique({
-      where: { userId: session.user.id },
-    });
-
-    if (!channel) {
-      return { success: false, error: "Channel not found" };
-    }
-
-    await prisma.channel.update({
-      where: { id: channel.id },
-      data: {
-        displayName: parsed.data.displayName,
-        description: parsed.data.description || null,
-        avatarUrl: parsed.data.avatarUrl || null,
-        bannerUrl: parsed.data.bannerUrl || null,
-        location: parsed.data.location || null,
-        contactEmail: parsed.data.contactEmail || null,
-        links: parsed.data.links && parsed.data.links.length > 0 ? parsed.data.links : undefined,
-      },
-    });
-
-    revalidatePath("/settings/channel");
-    revalidatePath(`/u/${session.user.username}`);
-    return { success: true };
-  } catch (error) {
-    console.error("Update channel error:", error);
-    return { success: false, error: "Failed to update channel" };
+  // Get current channel via service instead of Prisma
+  const myChannel = await channelService.getMe();
+  if (!myChannel.success || !myChannel.data) {
+    return { success: false, error: "Channel not found" };
   }
+
+  // Call user-service to update channel (emits events)
+  const result = await channelService.update(myChannel.data.handle, {
+    displayName: parsed.data.displayName,
+    description: parsed.data.description || undefined,
+    avatarUrl: parsed.data.avatarUrl || undefined,
+    bannerUrl: parsed.data.bannerUrl || undefined,
+    location: parsed.data.location || undefined,
+    contactEmail: parsed.data.contactEmail || undefined,
+    links: parsed.data.links && parsed.data.links.length > 0 ? parsed.data.links : undefined,
+  });
+
+  if (!result.success) {
+    return { success: false, error: result.error?.message || "Failed to update channel" };
+  }
+
+  revalidatePath("/settings/channel");
+  revalidatePath(`/u/${session.user.username}`);
+  return { success: true };
 }
 
+/**
+ * Delete the current user's channel
+ */
 export async function deleteChannel() {
   const session = await auth();
 
@@ -139,25 +119,19 @@ export async function deleteChannel() {
     return { success: false, error: "Unauthorized" };
   }
 
-  try {
-    const channel = await prisma.channel.findUnique({
-      where: { userId: session.user.id },
-    });
-
-    if (!channel) {
-      return { success: false, error: "Channel not found" };
-    }
-
-    // Soft delete
-    await prisma.channel.update({
-      where: { id: channel.id },
-      data: { deletedAt: new Date() },
-    });
-
-    revalidatePath("/settings/channel");
-    return { success: true };
-  } catch (error) {
-    console.error("Delete channel error:", error);
-    return { success: false, error: "Failed to delete channel" };
+  // Get current channel via service instead of Prisma
+  const myChannel = await channelService.getMe();
+  if (!myChannel.success || !myChannel.data) {
+    return { success: false, error: "Channel not found" };
   }
+
+  // Call user-service for proper event emission
+  const result = await channelService.delete(myChannel.data.handle);
+
+  if (!result.success) {
+    return { success: false, error: result.error?.message || "Failed to delete channel" };
+  }
+
+  revalidatePath("/settings/channel");
+  return { success: true };
 }

@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { prisma } from "@repo/database";
+import { accountService } from "@/lib/service-client";
 import { UsernameForm } from "@/components/settings/username-form";
 import { PasswordForm } from "@/components/settings/password-form";
 import { DeleteAccountDialog } from "@/components/settings/delete-account-dialog";
@@ -12,26 +12,19 @@ export default async function AccountPage() {
     return null;
   }
 
-  // Check if user has password
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { passwordHash: true, username: true },
-  });
+  // Use service endpoint for account info
+  const result = await accountService.getInfo();
 
-  const hasPassword = !!user?.passwordHash;
+  const hasPassword = result.success && result.data
+    ? result.data.hasPassword
+    : false;
+  
+  const username = result.success && result.data
+    ? result.data.username
+    : session.user.username || "";
 
-  // Check for rate limit on username change
-  const recentUsernameChange = await prisma.auditLog.findFirst({
-    where: {
-      targetUserId: session.user.id,
-      action: "USERNAME_CHANGE",
-      createdAt: { gt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  const cooldownUntil = recentUsernameChange
-    ? new Date(recentUsernameChange.createdAt.getTime() + 30 * 24 * 60 * 60 * 1000)
+  const cooldownUntil = result.success && result.data?.usernameCooldownUntil
+    ? new Date(result.data.usernameCooldownUntil)
     : null;
 
   return (
@@ -45,7 +38,7 @@ export default async function AccountPage() {
 
       {/* Username Section */}
       <UsernameForm
-        currentUsername={user?.username || ""}
+        currentUsername={username}
         cooldownUntil={cooldownUntil}
       />
 

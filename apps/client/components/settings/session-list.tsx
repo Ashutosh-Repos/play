@@ -27,6 +27,7 @@ import {
   IconMapPin 
 } from "@tabler/icons-react";
 import { formatDistanceToNow } from "date-fns";
+import { revokeSession as revokeSessionAction, revokeOtherSessions as revokeOtherSessionsAction } from "@/app/actions/account";
 
 interface Session {
   id: string;
@@ -90,38 +91,25 @@ export function SessionList({ sessions, currentSessionId }: SessionListProps) {
   async function revokeSession(sessionId: string) {
     setRevokingId(sessionId);
     startTransition(async () => {
-      try {
-        const res = await fetch(`/api/account/sessions/${sessionId}`, {
-          method: "DELETE",
-        });
-        if (res.ok) {
-          toast.success("Session revoked");
-          router.refresh();
-        } else {
-          toast.error("Failed to revoke session");
-        }
-      } catch {
-        toast.error("Failed to revoke session");
-      } finally {
-        setRevokingId(null);
+      const result = await revokeSessionAction(sessionId);
+      if (result.success) {
+        toast.success("Session revoked");
+        router.refresh();
+      } else {
+        toast.error(result.error || "Failed to revoke session");
       }
+      setRevokingId(null);
     });
   }
 
   async function revokeAllOthers() {
     startTransition(async () => {
-      try {
-        const res = await fetch("/api/account/sessions/others", {
-          method: "DELETE",
-        });
-        if (res.ok) {
-          toast.success("All other sessions revoked");
-          router.refresh();
-        } else {
-          toast.error("Failed to revoke sessions");
-        }
-      } catch {
-        toast.error("Failed to revoke sessions");
+      const result = await revokeOtherSessionsAction();
+      if (result.success) {
+        toast.success("All other sessions revoked");
+        router.refresh();
+      } else {
+        toast.error(result.error || "Failed to revoke sessions");
       }
     });
   }

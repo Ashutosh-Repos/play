@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { prisma } from "@repo/database";
+import { channelService } from "@/lib/service-client";
 import { CreateChannelForm } from "@/components/settings/create-channel-form";
 import { ChannelForm } from "@/components/settings/channel-form";
 
@@ -10,22 +10,9 @@ export default async function ChannelSettingsPage() {
     return null;
   }
 
-  const channel = await prisma.channel.findUnique({
-    where: { userId: session.user.id, deletedAt: null },
-    select: {
-      id: true,
-      handle: true,
-      displayName: true,
-      description: true,
-      avatarUrl: true,
-      bannerUrl: true,
-      location: true,
-      contactEmail: true,
-      links: true,
-      subscriberCount: true,
-      videoCount: true,
-    },
-  });
+  // Use service instead of direct Prisma
+  const result = await channelService.getMe();
+  const channel = result.success ? result.data : null;
 
   // Parse links from JSON
   const links = channel?.links as { title: string; url: string }[] | null;

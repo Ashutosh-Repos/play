@@ -11,16 +11,30 @@ const CACHE_TTL = {
   SUBSCRIPTION: 60 * 2, // 2 minutes for subscription status
 };
 
+// Helper to handle BigInt serialization
+function jsonStringify(data: any) {
+  return JSON.stringify(data, (_, v) => 
+    typeof v === 'bigint' ? v.toString() : v
+  );
+}
+
+function jsonParse(data: string) {
+  // We don't necessarily need to revive BigInts back to BigInt type here
+  // because the API response usually sends them as strings anyway.
+  // But if we wanted to be strict, we'd check keys.
+  return JSON.parse(data);
+}
+
 // Channel caching helpers
 export async function getCachedChannel(handle: string) {
   const cached = await redis.get(`channel:${handle.toLowerCase()}`);
-  return cached ? JSON.parse(cached) : null;
+  return cached ? jsonParse(cached) : null;
 }
 
 export async function cacheChannel(handle: string, data: object) {
   await redis.set(
     `channel:${handle.toLowerCase()}`,
-    JSON.stringify(data),
+    jsonStringify(data),
     "EX",
     CACHE_TTL.CHANNEL
   );
@@ -33,13 +47,13 @@ export async function invalidateChannelCache(handle: string) {
 // User caching helpers
 export async function getCachedUser(userId: string) {
   const cached = await redis.get(`user:${userId}`);
-  return cached ? JSON.parse(cached) : null;
+  return cached ? jsonParse(cached) : null;
 }
 
 export async function cacheUser(userId: string, data: object) {
   await redis.set(
     `user:${userId}`,
-    JSON.stringify(data),
+    jsonStringify(data),
     "EX",
     CACHE_TTL.USER
   );
@@ -52,13 +66,13 @@ export async function invalidateUserCache(userId: string) {
 // Subscription status caching
 export async function getCachedSubscriptionStatus(userId: string, channelId: string) {
   const cached = await redis.get(`sub:${userId}:${channelId}`);
-  return cached ? JSON.parse(cached) : null;
+  return cached ? jsonParse(cached) : null;
 }
 
 export async function cacheSubscriptionStatus(userId: string, channelId: string, subscribed: boolean) {
   await redis.set(
     `sub:${userId}:${channelId}`,
-    JSON.stringify({ subscribed }),
+    jsonStringify({ subscribed }),
     "EX",
     CACHE_TTL.SUBSCRIPTION
   );

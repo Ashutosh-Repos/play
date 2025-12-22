@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { prisma } from "@repo/database";
+import { accountService } from "@/lib/service-client";
 import { SessionList } from "@/components/settings/session-list";
 import { OAuthConnections } from "@/components/settings/oauth-connections";
 import { Separator } from "@/components/ui/separator";
@@ -11,40 +11,36 @@ export default async function SessionsPage() {
     return null;
   }
 
-  // Get active sessions
-  const sessions = await prisma.refreshToken.findMany({
-    where: {
-      userId: session.user.id,
-      revokedAt: null,
-      expiresAt: { gt: new Date() },
-    },
-    select: {
-      id: true,
-      userAgent: true,
-      ipAddress: true,
-      createdAt: true,
-      expiresAt: true,
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  // Pass sessionId for x-token-id header to mark current session
+  const [sessionsResult, connectionsResult, infoResult] = await Promise.all([
+    accountService.getSessions(session.user.sessionId ?? undefined),
+    accountService.getConnections(),
+    accountService.getInfo(),
+  ]);
 
-  // Get OAuth connections
-  const connections = await prisma.oAuthIdentity.findMany({
-    where: { userId: session.user.id },
-    select: {
-      id: true,
-      provider: true,
-      createdAt: true,
-    },
-  });
+  const sessions = sessionsResult.success && sessionsResult.data 
+    ? sessionsResult.data.map(s => ({
+        id: s.id,
+        userAgent: s.userAgent,
+        ipAddress: s.ipAddress,
+        createdAt: new Date(s.createdAt),
+        expiresAt: new Date(s.expiresAt),
+        current: s.current,
+      }))
+    : [];
 
-  // Check if user has password (to determine if they can unlink OAuth)
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { passwordHash: true },
-  });
+  const connections = connectionsResult.success && connectionsResult.data
+    ? connectionsResult.data.map(c => ({
+        id: c.id,
+        provider: c.provider,
+        createdAt: new Date(c.createdAt),
+      }))
+    : [];
 
-  const hasPassword = !!user?.passwordHash;
+  // Get hasPassword from account info endpoint
+  const hasPassword = infoResult.success && infoResult.data
+    ? infoResult.data.hasPassword
+    : false;
 
   return (
     <div className="space-y-8">

@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { IconBrandGoogle, IconBrandGithub, IconBrandDiscord, IconLoader2, IconUnlink, IconLink } from "@tabler/icons-react";
 import { formatDistanceToNow } from "date-fns";
+import { unlinkConnection as unlinkConnectionAction } from "@/app/actions/account";
 
 interface Connection {
   id: string;
@@ -51,19 +52,12 @@ export function OAuthConnections({ connections, hasPassword }: OAuthConnectionsP
 
   async function unlinkProvider(provider: string) {
     startTransition(async () => {
-      try {
-        const res = await fetch(`/api/account/connections/${provider}`, {
-          method: "DELETE",
-        });
-        if (res.ok) {
-          toast.success(`${providerConfig[provider]?.label || provider} disconnected`);
-          router.refresh();
-        } else {
-          const data = await res.json();
-          toast.error(data.error?.message || "Failed to disconnect");
-        }
-      } catch {
-        toast.error("Failed to disconnect");
+      const result = await unlinkConnectionAction(provider);
+      if (result.success) {
+        toast.success(`${providerConfig[provider]?.label || provider} disconnected`);
+        router.refresh();
+      } else {
+        toast.error(result.error || "Failed to disconnect");
       }
     });
   }
