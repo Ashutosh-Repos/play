@@ -1,61 +1,10 @@
+
 import { config } from "dotenv";
 import { join } from "path";
 
-// Load .env from monorepo root
+// Load .env from monorepo root BEFORE importing server code
+// This prevents ESM hoisting from executing imports (like auth) before env is loaded
 config({ path: join(process.cwd(), "../../.env") });
-import express from "express";
-import cors from "cors";
-import { serverEnv } from "@repo/config";
-import { redis } from "./lib/redis.js";
-import { startBackgroundJobs } from "./jobs/worker.js";
 
-const app = express();
-const PORT = process.env.PORT || 4006;
-
-// CORS config - use env var in production
-const corsOptions = {
-  origin: serverEnv.ALLOWED_ORIGINS?.split(',') || true,
-  credentials: true,
-};
-
-app.use(cors(corsOptions));
-app.use(express.json());
-
-import reactionRouter from "./routes/reaction.js";
-import commentRouter from "./routes/comment.js";
-import viewRouter from "./routes/view.js";
-
-app.use("/api", reactionRouter);
-app.use("/api", commentRouter);
-app.use("/api", viewRouter);
-
-// Health check
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", service: "engagement-service" });
-});
-
-// Start server
-const server = app.listen(PORT, async () => {
-  console.log(`🚀 Engagement Service running on port ${PORT}`);
-  
-  // Test Redis connection
-  try {
-    const start = Date.now();
-    await redis.ping();
-    console.log(`Redis connected in ${Date.now() - start}ms`);
-    
-    startBackgroundJobs();
-  } catch (err) {
-    console.error("Failed to connect to Redis on startup", err);
-  }
-});
-
-// Graceful shutdown
-process.on("SIGTERM", () => {
-  console.log("SIGTERM received");
-  server.close(() => {
-    console.log("Server closed");
-    redis.quit();
-    process.exit(0);
-  });
-});
+// Import the actual server logic
+import("./server.js");

@@ -39,10 +39,10 @@ const serverEnvSchema = z.object({
   MEILISEARCH_URL: z.string().url().default("http://localhost:7700"),
   MEILISEARCH_KEY: z.string().default("play-search-key"),
 
-  // ClickHouse
-  CLICKHOUSE_URL: z.string().default("http://localhost:8123"),
-  CLICKHOUSE_USER: z.string().default("play"),
-  CLICKHOUSE_PASSWORD: z.string().default("play123"),
+  // ClickHouse (Optional - can be removed if not used)
+  CLICKHOUSE_URL: z.string().default("http://localhost:8123").optional(),
+  CLICKHOUSE_USER: z.string().default("play").optional(),
+  CLICKHOUSE_PASSWORD: z.string().default("play123").optional(),
 
   // JWT / Auth
   JWT_SECRET: z.string().min(16).default("VbyFelqTxFcsNxBWSyvptR6Sf2RPKtxl9eLVHex1lIk="),
@@ -50,12 +50,39 @@ const serverEnvSchema = z.object({
   AUTH_SECRET: z.string().min(16).default("VbyFelqTxFcsNxBWSyvptR6Sf2RPKtxl9eLVHex1lIk="),
   NEXTAUTH_SECRET: z.string().default("VbyFelqTxFcsNxBWSyvptR6Sf2RPKtxl9eLVHex1lIk="),
   NEXTAUTH_URL: z.string().url().default("http://localhost:3000"),
+  
+  // Internal service-to-service auth
+  INTERNAL_SERVICE_SECRET: z.string().default("internal-service-secret-key-for-dev"),
 
   // CORS - comma-separated origins, empty means allow all in dev
   ALLOWED_ORIGINS: z.string().optional(),
 
   // Service ports (optional, services can use defaults)
   PORT: z.coerce.number().optional(),
+  
+  // Service URLs (for client-to-service communication)
+  USER_SERVICE_URL: z.string().default("http://localhost:4001").optional(),
+  VIDEO_SERVICE_URL: z.string().default("http://localhost:4003").optional(),
+  ENGAGEMENT_SERVICE_URL: z.string().default("http://localhost:4006").optional(),
+  SEARCH_SERVICE_URL: z.string().default("http://localhost:4009").optional(),
+  FEED_SERVICE_URL: z.string().default("http://localhost:4010").optional(),
+  NOTIFICATION_SERVICE_URL: z.string().default("http://localhost:4011").optional(),
+  
+  // Optional: Email/SMTP
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),
+  
+  // Optional: OAuth
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GITHUB_CLIENT_ID: z.string().optional(),
+  GITHUB_CLIENT_SECRET: z.string().optional(),
+  
+  // Optional: FFmpeg (for transcoder)
+  FFMPEG_THREADS: z.coerce.number().default(4).optional(),
 });
 
 // Parse environment variables - will throw if validation fails

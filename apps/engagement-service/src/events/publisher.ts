@@ -35,7 +35,7 @@ export function emitVideoLiked(videoId: string, userId: string, type: "LIKE" | "
   });
 }
 
-export function emitVideoStats(videoId: string, stats: { viewCount?: number; likeCount?: number; commentCount?: number }) {
+export function emitVideoStats(videoId: string, stats: { viewCount?: number; likeCount?: number; dislikeCount?: number; commentCount?: number }) {
   publish("video.stats.updated", {
     type: "video.stats.updated",
     payload: { videoId, ...stats, timestamp: new Date().toISOString() }

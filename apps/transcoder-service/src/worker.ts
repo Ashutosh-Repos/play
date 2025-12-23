@@ -61,6 +61,7 @@ export const startWorker = async () => {
 
       try {
         // 1. Notify Started
+        console.log(`[Pipeline] 5. Worker Started: videoId=${videoId} jobId=${job.id}`);
         publishEvent(EXCHANGES.VIDEO, "transcode.progress", {
           type: "transcode.progress",
           payload: {
@@ -72,11 +73,12 @@ export const startWorker = async () => {
 
         // 2. Download
         await job.updateProgress({ step: "downloading", progress: 10 });
-        // The key in MinIO is usually uploads/{videoId}/original based on video-service logic
-        // But here it seems to assume raw/{fileName}. 
-        // We will trust 'fileName' for the KEY (as it might be legacy) but Use SAFE path for local write.
-        await downloadVideo(`raw/${fileName}`, inputPath);
         
+        // Use the S3 Key provided in the job (fileName field carries the key)
+        console.log(`[Pipeline] Downloading from Key: ${fileName}`);
+        await downloadVideo(fileName, inputPath);
+        
+        console.log(`[Pipeline] 6. Downloaded source for ${videoId}`);
         publishEvent(EXCHANGES.VIDEO, "transcode.progress", {
           type: "transcode.progress",
           payload: {
@@ -91,27 +93,17 @@ export const startWorker = async () => {
         const metadata = await getVideoMetadata(inputPath);
         console.log("Metadata:", metadata);
         
-        // Check minimum resolution - FATAL error if too low
-        if (metadata.height < 360) {
-          throw new UnrecoverableError(
-            `Video resolution too low (${metadata.width}x${metadata.height}). Minimum required: 640x360.`
-          );
-        }
-        
-        // Check if we can produce any resolutions
-        const targetResolutions = getTargetResolutions(metadata.height);
-        if (targetResolutions.length === 0) {
-          throw new UnrecoverableError(`Cannot produce any resolutions for height ${metadata.height}`);
-        }
+        // ... (snip) ...
 
         // 4. Generate Thumbnails (before transcoding)
         await job.updateProgress({ step: "thumbnails", progress: 20 });
-        console.log(`Generating thumbnails for ${videoId}...`);
+        console.log(`[Pipeline] Generating thumbnails for ${videoId}...`);
         const generatedThumbnails = await generateThumbnails(inputPath, outputDir, metadata.height);
         
         // Upload thumbnails immediately so users can preview while transcoding
         const uploadedThumbnails = await uploadThumbnails(videoId, outputDir, generatedThumbnails);
         
+        console.log(`[Pipeline] 7. Thumbnails Ready for ${videoId}`);
         publishEvent(EXCHANGES.VIDEO, "transcode.thumbnails", {
           type: "transcode.thumbnails",
           payload: {
@@ -122,7 +114,7 @@ export const startWorker = async () => {
         
         // 5. Transcode (adaptive based on source height)
         let lastProgress = 0;
-        console.log(`Starting adaptive transcoding for ${videoId} (source: ${metadata.width}x${metadata.height})`);
+        console.log(`[Pipeline] 8. Starting Transcoding for ${videoId}`);
         
         const transcodeResult = await transcodeVideo({
           inputPath,
@@ -152,7 +144,7 @@ export const startWorker = async () => {
           timeout: Math.floor(JOB_TIMEOUT_MS / 1000), 
         });
         
-        console.log(`Transcoding complete for ${videoId}. Resolutions: ${transcodeResult.resolutions.join(", ")}`);
+        console.log(`[Pipeline] Transcoding complete for ${videoId}. Resolutions: ${transcodeResult.resolutions.join(", ")}`);
 
         await job.updateProgress({ step: "transcoding_done", progress: 80 });
         
@@ -168,6 +160,7 @@ export const startWorker = async () => {
         // 6. Upload HLS artifacts (excluding already-uploaded thumbnails)
         await job.updateProgress({ step: "uploading", progress: 90 });
         const uploadedFiles = await uploadArtifacts(videoId, outputDir, [".m3u8", ".ts"]);
+        console.log(`[Pipeline] 9. HLS Artifacts Uploaded for ${videoId}`);
 
         // 7. Cleanup working directory
         await fs.remove(workDir);
@@ -193,7 +186,7 @@ export const startWorker = async () => {
           },
         });
 
-        console.log(`✅ [Job ${job.id}] Transcoding finished for ${videoId}`);
+        console.log(`[Pipeline] ✅ [Job ${job.id}] Transcoding pipeline finished for ${videoId}`);
         return { success: true, hlsPlaylistUrl, thumbnailUrls: uploadedThumbnails };
       } catch (error: any) {
         console.error(`❌ [Job ${job.id}] Failed:`, error);

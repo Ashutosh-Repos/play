@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/form";
 
 import { IconMicrophone, IconSearch, IconX } from "@tabler/icons-react";
+import { useRouter } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 import { useClkOut } from "@/hooks/useClkOut";
@@ -24,6 +25,7 @@ const FormSchema = z.object({
 });
 
 export function SearchForm() {
+  const router = useRouter();
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: { query: "" },
@@ -106,7 +108,8 @@ export function SearchForm() {
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
     console.log("Auto-submitted query:", data.query);
-    // 👉 Replace with API call or router.push(`/search?q=${data.query}`)
+    router.push(`/search?q=${encodeURIComponent(data.query)}`);
+    setFormActive(false); 
   }
 
   const [isFormActive, setFormActive] = useState<boolean>(false);

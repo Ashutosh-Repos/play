@@ -2,20 +2,25 @@ import { Channel } from "amqplib";
 import { meili, INDEX_VIDEOS } from "../lib/meili.js";
 import { prisma } from "@repo/database";
 
+import { EXCHANGES } from "@repo/events";
+
 // Queue name should be unique for this service so it gets its own copy of fanout messages if any,
 // but for 'video.ready' (Exchange: video-events), we want a dedicated queue for search indexing.
 const QUEUE_NAME = "search-service-video-queue";
-const EXCHANGE_NAME = "video-events"; // Defined in @repo/events
+// const EXCHANGE_NAME = "video-events"; // Now using EXCHANGES constant
 
 export const startVideoConsumer = async (channel: Channel) => {
-  await channel.assertExchange(EXCHANGE_NAME, "topic", { durable: true });
+  await channel.assertExchange(EXCHANGES.VIDEO, "topic", { durable: true });
   await channel.assertQueue(QUEUE_NAME, { durable: true });
 
   // Bind to relevant routing keys
-  await channel.bindQueue(QUEUE_NAME, EXCHANGE_NAME, "video.published"); // New video published (was: video.ready)
-  await channel.bindQueue(QUEUE_NAME, EXCHANGE_NAME, "video.updated"); // Metadata change
-  await channel.bindQueue(QUEUE_NAME, EXCHANGE_NAME, "video.deleted"); // Soft/Hard delete
-  await channel.bindQueue(QUEUE_NAME, EXCHANGE_NAME, "video.stats.updated"); // Engagement updates
+  await channel.bindQueue(QUEUE_NAME, EXCHANGES.VIDEO, "video.published"); 
+  await channel.bindQueue(QUEUE_NAME, EXCHANGES.VIDEO, "video.updated"); 
+  await channel.bindQueue(QUEUE_NAME, EXCHANGES.VIDEO, "video.deleted"); 
+  
+  // Engagement events come from a different exchange
+  await channel.assertExchange(EXCHANGES.ENGAGEMENT, "topic", { durable: true });
+  await channel.bindQueue(QUEUE_NAME, EXCHANGES.ENGAGEMENT, "video.stats.updated");
 
   console.log(`🎧 Listening for video events on ${QUEUE_NAME}...`);
 
@@ -50,14 +55,32 @@ export const startVideoConsumer = async (channel: Channel) => {
           // fetch fresh data from DB to ensure consistency
           // Note: for video.published, payload might differ, but fetching DB is safest source of truth
           const video = await prisma.video.findUnique({
-              where: { id: videoId }
+              where: { id: videoId },
+              include: { channel: true }  // Include channel for proper indexing
           });
 
           if (video && video.visibility === "PUBLIC" && video.processingStatus === "READY") {
+               // Transform to flat structure for Meilisearch
                await index.addDocuments([{
-                   ...video,
+                   id: video.id,
+                   title: video.title,
+                   description: video.description,
+                   thumbnailUrl: video.thumbnailUrl,
                    viewCount: Number(video.viewCount),
-                   createdAt: video.createdAt.getTime()
+                   duration: video.duration,
+                   createdAt: video.createdAt.getTime(),
+                   publishedAt: video.publishedAt?.getTime() || video.createdAt.getTime(),
+                   visibility: video.visibility,
+                   processingStatus: video.processingStatus,
+                   channelId: video.channelId,
+                   channelName: video.channel.displayName,
+                   channelHandle: video.channel.handle,
+                   channelAvatarUrl: video.channel.avatarUrl,
+                   tags: video.tags,
+                   categoryId: video.categoryId,
+                   likeCount: video.likeCount,
+                   dislikeCount: video.dislikeCount,
+                   commentCount: video.commentCount
                }]);
                console.log(`🔍 Indexed/Updated ${videoId}`);
           } else {

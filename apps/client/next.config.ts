@@ -18,6 +18,7 @@ const nextConfig: NextConfig = {
         hostname: "api.dicebear.com",
       },
     ],
+    unoptimized: process.env.NODE_ENV === "development",
   },
 };
 

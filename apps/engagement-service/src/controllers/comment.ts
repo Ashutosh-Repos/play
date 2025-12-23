@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { prisma } from "@repo/database";
 import { z } from "zod";
 import { sanitize } from "@repo/common";
+import { emitVideoStats } from "../events/publisher.js";
 
 // Sanitization logic moved to @repo/common
 
@@ -44,7 +45,7 @@ export const createComment = async (req: Request, res: Response) => {
     }
 
     // Transaction: Create comment + Increment Video count + Increment Parent reply count
-    const [comment] = await prisma.$transaction([
+    const [comment, updatedVideo] = await prisma.$transaction([
       prisma.comment.create({
         data: {
           content: sanitizedContent, // Use sanitized content
@@ -58,7 +59,8 @@ export const createComment = async (req: Request, res: Response) => {
       }),
       prisma.video.update({
         where: { id: videoId },
-        data: { commentCount: { increment: 1 } }
+        data: { commentCount: { increment: 1 } },
+        select: { commentCount: true } // Return new count
       }),
       ...(parentId ? [
         prisma.comment.update({
@@ -68,11 +70,20 @@ export const createComment = async (req: Request, res: Response) => {
       ] : [])
     ]);
 
-    res.status(201).json(comment);
+    const responseData = {
+        ...comment,
+        author: comment.user,
+        user: undefined
+    };
+
+    // Emit stats
+    emitVideoStats(videoId, { commentCount: updatedVideo.commentCount });
+    
+    res.status(201).json({ success: true, data: responseData });
   } catch (error) {
-    if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+    if (error instanceof z.ZodError) return res.status(400).json({ error: { code: "VALIDATION_ERROR", message: error.errors[0]?.message || "Invalid input" } });
     console.error("Create Comment Error:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+    res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Internal Server Error" } });
   }
 };
 
@@ -109,23 +120,39 @@ export const listComments = async (req: Request, res: Response) => {
       skip,
     });
 
-    // Sanitize tombstones
-    const sanitized = comments.map((c: typeof comments[0]) => {
+    // Sanitize and Map
+    const items = comments.map((c: any) => {
         if (c.status === "REMOVED") {
             return {
                 ...c,
                 content: "[Comment Deleted]",
-                user: null, // Hide user info
+                author: {
+                    id: "deleted",
+                    username: "deleted",
+                    displayName: "Deleted User",
+                    avatarUrl: null
+                },
+                user: undefined, // Remove original
                 isPinned: false
             };
         }
-        return c;
+        return {
+            ...c,
+            author: c.user,
+            user: undefined
+        };
     });
 
-    res.json(sanitized);
+    res.json({ 
+        success: true, 
+        data: {
+            items,
+            nextCursor: comments.length === Number(limit) ? String(Number(page) + 1) : null
+        }
+    });
   } catch (error) {
     console.error("List Comments Error:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+    res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Internal Server Error" } });
   }
 };
 
@@ -151,22 +178,38 @@ export const listReplies = async (req: Request, res: Response) => {
             skip: (Number(page) - 1) * Number(limit),
         });
 
-        const sanitized = replies.map((c: typeof replies[0]) => {
+        const items = replies.map((c: any) => {
             if (c.status === "REMOVED") {
                 return {
                     ...c,
                     content: "[Comment Deleted]",
-                    user: null, 
+                    author: {
+                        id: "deleted",
+                        username: "deleted",
+                        displayName: "Deleted User",
+                        avatarUrl: null
+                    },
+                    user: undefined,
                     isPinned: false
                 };
             }
-            return c;
+            return {
+                ...c,
+                author: c.user,
+                user: undefined
+            };
         });
 
-        res.json(sanitized);
+        res.json({ 
+            success: true, 
+            data: {
+                items,
+                nextCursor: replies.length === Number(limit) ? String(Number(page) + 1) : null
+            }
+        });
     } catch (error) {
         console.error("List Replies Error:", error);
-        res.status(500).json({ error: "Internal Server Error" });
+        res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Internal Server Error" } });
     }
 }
 
@@ -193,7 +236,7 @@ export const deleteComment = async (req: Request, res: Response) => {
         }
 
         // Transaction: Soft Delete + Decrement counts
-        await prisma.$transaction([
+        const [_, updatedVideo] = await prisma.$transaction([
             prisma.comment.update({
                 where: { id: commentId },
                 data: { 
@@ -203,7 +246,8 @@ export const deleteComment = async (req: Request, res: Response) => {
             }),
             prisma.video.update({
                 where: { id: comment.videoId },
-                data: { commentCount: { decrement: 1 } }
+                data: { commentCount: { decrement: 1 } },
+                select: { commentCount: true }
             }),
             ...(comment.parentId ? [
                 prisma.comment.update({
@@ -213,10 +257,13 @@ export const deleteComment = async (req: Request, res: Response) => {
             ] : [])
         ]);
         
-        res.json({ success: true });
+        // Emit updated stats
+        emitVideoStats(comment.videoId, { commentCount: updatedVideo.commentCount });
+        
+        res.json({ success: true, data: { status: "deleted" } });
     } catch (error) {
         console.error("Delete Comment Error:", error);
-        res.status(500).json({ error: "Internal Server Error" });
+        res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Internal Server Error" } });
     }
 }
 
@@ -225,14 +272,14 @@ export const pinComment = async (req: Request, res: Response) => {
     try {
         const userId = req.user?.sub;
         const { id: commentId } = req.params;
-        if (!userId) return res.status(401).json({ error: "Unauthorized" });
+        if (!userId) return res.status(401).json({ error: { code: "UNAUTHORIZED", message: "Unauthorized" } });
 
         const comment = await prisma.comment.findUnique({ where: { id: commentId } });
-        if (!comment) return res.status(404).json({ error: "Comment not found" });
+        if (!comment) return res.status(404).json({ error: { code: "NOT_FOUND", message: "Comment not found" } });
 
         // Only Video Owner can pin
         if (!await isVideoOwner(userId, comment.videoId)) {
-            return res.status(403).json({ error: "Only the video owner can pin comments" });
+            return res.status(403).json({ error: { code: "FORBIDDEN", message: "Only the video owner can pin comments" } });
         }
 
         // Transaction: Unpin all others in this video, Pin this one
@@ -247,10 +294,10 @@ export const pinComment = async (req: Request, res: Response) => {
             })
         ]);
 
-        res.json({ success: true, isPinned: true });
+        res.json({ success: true, data: { isPinned: true } });
     } catch (error) {
         console.error("Pin Comment Error:", error);
-        res.status(500).json({ error: "Internal Server Error" });
+        res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Internal Server Error" } });
     }
 }
 
@@ -259,13 +306,13 @@ export const unpinComment = async (req: Request, res: Response) => {
     try {
         const userId = req.user?.sub;
         const { id: commentId } = req.params;
-        if (!userId) return res.status(401).json({ error: "Unauthorized" });
+        if (!userId) return res.status(401).json({ error: { code: "UNAUTHORIZED", message: "Unauthorized" } });
 
         const comment = await prisma.comment.findUnique({ where: { id: commentId } });
-        if (!comment) return res.status(404).json({ error: "Comment not found" });
+        if (!comment) return res.status(404).json({ error: { code: "NOT_FOUND", message: "Comment not found" } });
 
         if (!await isVideoOwner(userId, comment.videoId)) {
-            return res.status(403).json({ error: "Forbidden" });
+            return res.status(403).json({ error: { code: "FORBIDDEN", message: "Forbidden" } });
         }
 
         await prisma.comment.update({
@@ -273,10 +320,10 @@ export const unpinComment = async (req: Request, res: Response) => {
             data: { isPinned: false }
         });
 
-        res.json({ success: true, isPinned: false });
+        res.json({ success: true, data: { isPinned: false } });
     } catch (error) {
         console.error("Unpin Comment Error:", error);
-        res.status(500).json({ error: "Internal Server Error" });
+        res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Internal Server Error" } });
     }
 }
 
@@ -285,14 +332,14 @@ export const heartComment = async (req: Request, res: Response) => {
     try {
         const userId = req.user?.sub;
         const { id: commentId } = req.params;
-        if (!userId) return res.status(401).json({ error: "Unauthorized" });
+        if (!userId) return res.status(401).json({ error: { code: "UNAUTHORIZED", message: "Unauthorized" } });
 
         const comment = await prisma.comment.findUnique({ where: { id: commentId } });
-        if (!comment) return res.status(404).json({ error: "Comment not found" });
+        if (!comment) return res.status(404).json({ error: { code: "NOT_FOUND", message: "Comment not found" } });
 
         // Only Video Owner can heart
         if (!await isVideoOwner(userId, comment.videoId)) {
-            return res.status(403).json({ error: "Forbidden" });
+            return res.status(403).json({ error: { code: "FORBIDDEN", message: "Forbidden" } });
         }
 
         const updated = await prisma.comment.update({
@@ -300,9 +347,9 @@ export const heartComment = async (req: Request, res: Response) => {
             data: { isHearted: !comment.isHearted } // Toggle
         });
 
-        res.json({ success: true, isHearted: updated.isHearted });
+        res.json({ success: true, data: { isHearted: updated.isHearted } });
     } catch (error) {
         console.error("Heart Comment Error:", error);
-        res.status(500).json({ error: "Internal Server Error" });
+        res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Internal Server Error" } });
     }
 }

@@ -5,6 +5,7 @@ import { prisma } from "@repo/database";
 import { EXCHANGES } from "@repo/events";
 import { cacheVideoStatus, publishToVideoChannel } from "../lib/redis.js";
 import { config } from "../config.js";
+import { getFileUrl } from "../lib/storage.js";
 
 let connection: Awaited<ReturnType<typeof amqp.connect>> | null = null;
 let channel: amqp.Channel | null = null;
@@ -160,22 +161,27 @@ async function handleProgress(event: TranscodeProgressEvent): Promise<void> {
 async function handleThumbnails(event: TranscodeThumbnailsEvent): Promise<void> {
   const { videoId, thumbnailOptions } = event.payload;
 
-  // Update DB
+  const thumbnails = thumbnailOptions.map(t => getFileUrl(t)).filter((t): t is string => t !== null);
+
+  // Update DB (keep original paths or URLs? DB usually stores paths/keys for portability, but let's check schema.
+  // Previous code stored raw keys. Let's keep storing raw keys in DB if that's the convention, 
+  // BUT the cache and websocket should send URLs.
+  
   await prisma.video.update({
     where: { id: videoId },
-    data: { thumbnailOptions },
+    data: { thumbnailOptions }, // Store keys in DB
   });
 
   // Update cache
   await cacheVideoStatus(videoId, {
     status: "processing",
-    thumbnails: thumbnailOptions,
+    thumbnails, // Send URLs
   });
 
   // Broadcast to WebSocket clients
   await publishToVideoChannel(videoId, {
     type: "thumbnails",
-    thumbnails: thumbnailOptions,
+    thumbnails, // Send URLs
   });
 
   console.log(`📷 Thumbnails generated for video ${videoId}`);
@@ -228,10 +234,10 @@ async function handleCompleted(event: TranscodeCompletedEvent): Promise<void> {
     data: {
       processingStatus: "READY",
       processingProgress: 100,
-      hlsPlaylistUrl,
-      thumbnailUrl: thumbnailOptions[0], // Default to first thumbnail
-      thumbnailOptions,
-      previewSprite,
+      hlsPlaylistUrl, // Store Key
+      thumbnailUrl: thumbnailOptions[0], // Store Key
+      thumbnailOptions, // Store Keys
+      previewSprite, // Store Key
       duration,
       width,
       height,
@@ -240,12 +246,17 @@ async function handleCompleted(event: TranscodeCompletedEvent): Promise<void> {
     },
   });
 
+  // Transform to URLs for Clients
+  const fullHlsUrl = getFileUrl(hlsPlaylistUrl);
+  const fullThumbnails = thumbnailOptions.map(t => getFileUrl(t)).filter((t): t is string => t !== null);
+  const fullPreview = getFileUrl(previewSprite || null);
+
   // Update cache
   await cacheVideoStatus(videoId, {
     status: "ready",
     progress: 100,
-    thumbnails: thumbnailOptions,
-    hlsUrl: hlsPlaylistUrl,
+    thumbnails: fullThumbnails,
+    hlsUrl: fullHlsUrl || undefined,
   });
 
   // Broadcast to WebSocket clients
@@ -253,10 +264,12 @@ async function handleCompleted(event: TranscodeCompletedEvent): Promise<void> {
     type: "state",
     status: "ready",
     progress: 100,
-    thumbnails: thumbnailOptions,
-    hlsUrl: hlsPlaylistUrl,
+    thumbnails: fullThumbnails,
+    hlsUrl: fullHlsUrl,
     canPublish: true,
   });
+
+  console.log(`[Pipeline] 10. Video Service Received Completion: videoId=${videoId}`);
 
   // Emit domain event for other services (Search/Feed)
   // Need channelId for the event payload
@@ -270,7 +283,7 @@ async function handleCompleted(event: TranscodeCompletedEvent): Promise<void> {
     emitVideoUpdated(videoId, videoWithChannel.channelId, ["processingStatus", "hlsPlaylistUrl", "thumbnailUrl"]);
   }
 
-  console.log(`✅ Video ${videoId} transcoding complete`);
+  console.log(`[Pipeline] ✅ Video ${videoId} is fully READY (DB updated, Event emitted)`);
 }
 
 /**

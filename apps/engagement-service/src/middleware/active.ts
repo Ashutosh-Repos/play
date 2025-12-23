@@ -35,21 +35,33 @@ export const requireActiveUser = () => {
       }
 
       const userId = req.user.sub;
+      console.log(`[ActiveMiddleware] Checking status for userId: ${userId}`);
+      console.log(`[Debug] DATABASE_URL prefix: ${process.env.DATABASE_URL?.substring(0, 20)}...`);
+      
+      const fs = await import("fs");
+      fs.appendFileSync("engagement-debug.log", `[${new Date().toISOString()}] Checking userId: ${userId}\n`);
+      fs.appendFileSync("engagement-debug.log", `[${new Date().toISOString()}] DATABASE_URL: ${process.env.DATABASE_URL}\n`);
 
       // 1. Check Cache
       let user = await getCachedUser(userId);
 
       // 2. Refresh Cache if missing
       if (!user) {
+        console.log(`[ActiveMiddleware] Cache miss for ${userId}, fetching from DB...`);
         user = await prisma.user.findUnique({
           where: { id: userId },
           select: { id: true, status: true },
         });
 
         if (user) {
+          console.log(`[ActiveMiddleware] Found user in DB: ${user.status}`);
           // Cache only minimal info needed matches user-service format
           await cacheUser(userId, user);
+        } else {
+             console.error(`[ActiveMiddleware] User NOT found in DB for id: ${userId}`);
         }
+      } else {
+          console.log(`[ActiveMiddleware] Cache hit for ${userId}: ${user.status}`);
       }
 
       if (!user) {
@@ -61,7 +73,8 @@ export const requireActiveUser = () => {
       // 3. Verify Status
       if (user.status !== "ACTIVE") {
         return res.status(403).json({
-          error: "Your account is not active. Actions are restricted.",
+          success: false,
+          error: { code: "FORBIDDEN", message: "Your account is not active. Actions are restricted." }
         });
       }
 
@@ -69,7 +82,8 @@ export const requireActiveUser = () => {
     } catch (error) {
       console.error("Active user check error:", error);
       res.status(500).json({
-        error: "Failed to verify account status",
+        success: false,
+        error: { code: "INTERNAL_ERROR", message: "Failed to verify account status" }
       });
     }
   };

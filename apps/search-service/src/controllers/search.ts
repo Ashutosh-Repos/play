@@ -31,11 +31,14 @@ export const searchVideos = async (req: Request, res: Response) => {
     });
 
     res.json({
-        hits: result.hits,
-        estimatedTotalHits: result.estimatedTotalHits,
-        processingTimeMs: result.processingTimeMs,
-        page,
-        totalPages: Math.ceil(result.estimatedTotalHits / limit)
+        success: true,
+        data: {
+            hits: result.hits,
+            estimatedTotalHits: result.estimatedTotalHits,
+            processingTimeMs: result.processingTimeMs,
+            page,
+            totalPages: Math.ceil(result.estimatedTotalHits / limit)
+        }
     });
 
   } catch (error) {

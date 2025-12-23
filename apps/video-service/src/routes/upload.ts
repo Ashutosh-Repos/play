@@ -79,8 +79,13 @@ router.post("/", authMiddleware(), async (req, res) => {
       progress: 0,
     });
 
-    // WebSocket URL (relative, will be upgraded by server)
-    const wsUrl = `/ws/videos/${video.id}`;
+    // WebSocket URL (absolute for client connection)
+    // Pass token in query param for WS authentication
+    const token = req.headers.authorization?.replace("Bearer ", "") || "";
+    // In prod, use environment variable for public WS host
+    const wsUrl = `ws://localhost:${config.port}/ws/videos?id=${video.id}&token=${token}`;
+
+    console.log(`[Pipeline] 1. Upload Initiated: videoId=${video.id} channel=${channel.handle}`);
 
     res.status(201).json({
       success: true,
@@ -92,7 +97,7 @@ router.post("/", authMiddleware(), async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Upload init error:", error);
+    console.error(`[Pipeline] Upload Init Failed:`, error);
     res.status(500).json({
       success: false,
       error: { code: "INTERNAL_ERROR", message: "Failed to initiate upload" },
@@ -263,12 +268,13 @@ router.post("/:id/uploaded", authMiddleware(), async (req, res) => {
     }
 
     // Emit rabbitmq event for transcoder
+    // Emit rabbitmq event for transcoder
     emitVideoUploaded(
       id as string,
       userId,
-      video.originalFileName || "unknown",
+      objectPath, // Send the S3 Key (uploads/{id}/original), NOT the user filename
       Number(stat.size),
-      "video/mp4" // Assuming mp4 for now or from DB if available
+      "video/mp4" 
     );
 
     // Update cache

@@ -115,6 +115,7 @@ router.post("/", async (req, res) => {
     });
 
     if (video) {
+        console.log(`[Pipeline] 3. Triggering Transcode: videoId=${videoId} size=${objectSize}`);
         // Publish event to RabbitMQ (Transcoder service listens to this)
         emitVideoUploaded(
             videoId, 
@@ -124,7 +125,7 @@ router.post("/", async (req, res) => {
             "video/mp4" // Default or extract from key
         );
     } else {
-        console.warn(`Could not find video ${videoId} for event emission`);
+        console.warn(`[Pipeline] ⚠️ Could not find video ${videoId} for event emission`);
     }
     
     // Update cache
@@ -140,10 +141,10 @@ router.post("/", async (req, res) => {
       progress: 0,
     });
     
-    console.log(`✅ Video ${videoId} queued for transcoding`);
+    console.log(`[Pipeline] ✅ Video ${videoId} queued for transcoding`);
     res.status(200).json({ ok: true, videoId });
   } catch (error) {
-    console.error("S3 event error:", error);
+    console.error(`[Pipeline] ❌ S3 event error:`, error);
     // Still return 200 to prevent MinIO from retrying
     res.status(200).json({ ok: true, error: "Processing failed" });
   }

@@ -68,8 +68,8 @@ export const authConfig = {
     },
     
     // Authorization check (optional, but we use Middleware for this)
-    async authorized({ auth }) {
-      return !!auth;
+    async authorized() {
+      return true;
     }
   },
 

@@ -1,4 +1,4 @@
-import { S3Client, CreateBucketCommand, HeadBucketCommand, HeadObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { S3Client, CreateBucketCommand, HeadBucketCommand, HeadObjectCommand, DeleteObjectsCommand, ListObjectsV2Command, PutBucketPolicyCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { serverEnv } from "@repo/config";
@@ -14,6 +14,15 @@ const s3Client = new S3Client({
     secretAccessKey: serverEnv.MINIO_SECRET_KEY,
   },
 });
+
+export const getFileUrl = (key: string | null): string | null => {
+  if (!key) return null;
+  if (key.startsWith("http")) return key; // Already a URL
+  // Default to constructing MinIO URL
+  const protocol = serverEnv.MINIO_USE_SSL ? "https" : "http";
+  return `${protocol}://${serverEnv.MINIO_ENDPOINT}:${serverEnv.MINIO_PORT}/${BUCKET_NAME}/${key}`;
+};
+
 
 /**
  * Ensure the video bucket exists
@@ -32,6 +41,29 @@ export const ensureBucket = async () => {
     } else {
         console.error("Error checking bucket:", err);
     }
+  }
+
+  // Set public read policy
+  try {
+      const policy = {
+          Version: "2012-10-17",
+          Statement: [
+              {
+                  Effect: "Allow",
+                  Principal: { AWS: ["*"] },
+                  Action: ["s3:GetObject"],
+                  Resource: [`arn:aws:s3:::${BUCKET_NAME}/videos/*`, `arn:aws:s3:::${BUCKET_NAME}/thumbnails/*`]
+              }
+          ]
+      };
+      
+      await s3Client.send(new PutBucketPolicyCommand({
+          Bucket: BUCKET_NAME,
+          Policy: JSON.stringify(policy)
+      }));
+      console.log(`Bucket ${BUCKET_NAME} policy set to public read`);
+  } catch (err) {
+      console.error("Failed to set bucket policy:", err);
   }
 };
 

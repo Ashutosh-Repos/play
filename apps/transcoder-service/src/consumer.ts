@@ -91,16 +91,17 @@ async function handleMessage(msg: ConsumeMessage | null): Promise<void> {
     }
 
     const { videoId, fileName } = content.payload;
+    console.log(`[Pipeline] 4. Transcoder Received Job: videoId=${videoId} fileName=${fileName}`);
     
     // Deduplication: Check if job already exists for this video
     const jobExists = await jobExistsForVideo(videoId);
     if (jobExists) {
-      console.log(`⚠️ Job already exists for video ${videoId}, skipping duplicate`);
+      console.log(`[Pipeline] ⚠️ Job already exists for video ${videoId}, skipping duplicate`);
       channel.ack(msg);
       return;
     }
     
-    console.log(`Adding job for video ${videoId} to transcoding queue`);
+    console.log(`[Pipeline] Adding job for video ${videoId} to transcoding queue`);
     
     // Add to internal BullMQ queue
     const jobId = `${videoId}-${uuidv4()}`;

@@ -48,6 +48,9 @@ RUN pnpm install --prod --frozen-lockfile
 # Copy built files
 COPY --from=builder --chown=appuser:nodejs /app/apps/${SERVICE_NAME}/dist ./apps/${SERVICE_NAME}/dist
 
+# FIXED: Copy shared packages (needed at runtime for imports)
+COPY --from=builder --chown=appuser:nodejs /app/packages ./packages
+
 USER appuser
 ENV NODE_ENV=production
 EXPOSE 4000

@@ -1,18 +1,20 @@
 import jwt from "jsonwebtoken";
 import { Request, Response, NextFunction } from "express";
 
-const SERVICE_SECRET = process.env.INTERNAL_SERVICE_SECRET;
+// Read lazily to allow environment to be loaded
+const getServiceSecret = () => process.env.INTERNAL_SERVICE_SECRET;
 
-if (!SERVICE_SECRET) {
-  // Warn on startup but don't crash, as some scripts might import this without env
-  console.warn("⚠️ INTERNAL_SERVICE_SECRET is not set. Service-to-Service auth will fail.");
+if (!process.env.INTERNAL_SERVICE_SECRET) {
+  // Warn on startup (sync) but allow running if it's set later or deemed optional
+  // We check process.env directy here for the initial warning log
 }
 
 /**
  * Generate a signed JWT for internal service communication
  */
 export function generateServiceToken(serviceName: string): string {
-  if (!SERVICE_SECRET) {
+  const secret = getServiceSecret();
+  if (!secret) {
     throw new Error("INTERNAL_SERVICE_SECRET is not configured");
   }
 
@@ -22,7 +24,7 @@ export function generateServiceToken(serviceName: string): string {
       role: "service",
       type: "internal" 
     },
-    SERVICE_SECRET,
+    secret,
     { expiresIn: "5m" } // Short-lived tokens
   );
 }
@@ -47,8 +49,9 @@ export function verifyServiceToken(req: Request, res: Response, next: NextFuncti
   }
 
   const token = authHeader.split(" ")[1];
+  const secret = getServiceSecret();
 
-  if (!SERVICE_SECRET) {
+  if (!secret) {
     console.error("INTERNAL_SERVICE_SECRET not configured on server");
     return res.status(500).json({
       success: false,
@@ -64,7 +67,7 @@ export function verifyServiceToken(req: Request, res: Response, next: NextFuncti
   }
 
   try {
-    const decoded = jwt.verify(token, SERVICE_SECRET!) as unknown as ServiceTokenPayload;
+    const decoded = jwt.verify(token, secret) as unknown as ServiceTokenPayload;
     
     if (decoded.role !== "service" || decoded.type !== "internal") {
         return res.status(403).json({

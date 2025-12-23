@@ -34,7 +34,9 @@ const corsOptions = {
 
 // Custom JSON replacer for BigInt serialization
 function bigIntReplacer(_key: string, value: unknown): unknown {
-  return typeof value === 'bigint' ? value.toString() : value;
+  // Return as Number (safe up to 9 quadrillion, sufficient for view counts)
+  // This matches the client's expectation of 'number' type
+  return typeof value === 'bigint' ? Number(value) : value;
 }
 
 // Middleware

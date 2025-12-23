@@ -48,6 +48,7 @@ async function getAuthToken(): Promise<string | null> {
   const session = await auth();
   
   if (!session?.user) {
+    console.warn("[ServiceClient] No session found during token generation");
     return null;
   }
 
@@ -99,10 +100,14 @@ export async function serviceCall<T = unknown>(
       return {
         success: false,
         error: data?.error || {
-          code: "API_ERROR",
+        code: "API_ERROR",
           message: `Request failed: ${response.status} ${response.statusText}`,
         },
       };
+    }
+    
+    if (!response.ok) {
+        console.error(`[ServiceClient] Request failed: ${response.status} ${response.statusText} URL: ${url}`);
     }
 
     return data as ServiceResponse<T>;
@@ -401,15 +406,500 @@ export const settingsService = {
 // -----------------------------------------------------------------------------
 // Video Service (video-service /videos)
 // -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Video Service (video-service /videos)
+// -----------------------------------------------------------------------------
 export const videoService = {
-  get: (videoId: string) =>
-    serviceCall("video", `/videos/${videoId}`),
+  // --- Video Management ---
+  
+  // POST /videos - Create draft
+  create: (data: { 
+    title: string; 
+    description?: string; 
+    categoryId?: string;
+    tags?: string[];
+    language?: string;
+    visibility?: "PUBLIC" | "PRIVATE" | "UNLISTED" | "SCHEDULED";
+  }) => serviceCall("video", "/videos", { method: "POST", body: data }),
 
-  list: (params?: { limit?: number; cursor?: string }) => {
+  // PATCH /videos/:id - Update video
+  update: (id: string, data: {
+    title?: string;
+    description?: string;
+    tags?: string[];
+    thumbnailUrl?: string;
+    visibility?: "PUBLIC" | "PRIVATE" | "UNLISTED" | "SCHEDULED";
+    allowComments?: boolean;
+    allowEmbedding?: boolean;
+    isAgeRestricted?: boolean;
+  }) => serviceCall("video", `/videos/${id}`, { method: "PATCH", body: data }),
+
+  // DELETE /videos/:id - Delete video
+  delete: (id: string) => 
+    serviceCall("video", `/videos/${id}`, { method: "DELETE" }),
+
+  // POST /videos/:id/publish - Publish video
+  publish: (id: string, data: { 
+    visibility: "PUBLIC" | "UNLISTED" | "SCHEDULED"; 
+    scheduledAt?: Date 
+  }) => serviceCall("video", `/videos/${id}/publish`, { method: "POST", body: data }),
+
+  // --- Retrieval ---
+
+  // GET /videos/:id - Get public video details
+  get: (videoId: string) =>
+    serviceCall<{
+      id: string;
+      title: string;
+      description: string | null;
+      tags: string[];
+      visibility: string;
+      processingStatus: string;
+      hlsPlaylistUrl: string | null;
+      thumbnailUrl: string | null;
+      previewSprite: string | null;
+      duration: number | null;
+      viewCount: number;
+      likeCount: number;
+      dislikeCount: number;
+      commentCount: number;
+      publishedAt: string | null;
+      createdAt: string;
+      channel: {
+        id: string;
+        handle: string;
+        displayName: string;
+        avatarUrl: string | null;
+        subscriberCount: number;
+        isVerified: boolean;
+      };
+      category?: {
+        id: string;
+        name: string;
+        slug: string;
+      };
+    }>("video", `/videos/${videoId}`),
+
+  // GET /videos/:id/status - Get processing status
+  getStatus: (videoId: string) =>
+    serviceCall<{
+      id: string;
+      status: string;
+      progress: number;
+      error: string | null;
+      thumbnailOptions: string[];
+      canPublish: boolean;
+    }>("video", `/videos/${videoId}/status`),
+
+  // GET /videos/me - List my videos
+  getMyVideos: (params?: { limit?: number; cursor?: string; status?: string }) => {
     const searchParams = new URLSearchParams();
     if (params?.limit) searchParams.set("limit", String(params.limit));
     if (params?.cursor) searchParams.set("cursor", params.cursor);
-    return serviceCall("video", `/videos?${searchParams}`);
+    if (params?.status) searchParams.set("status", params.status);
+    return serviceCall<{
+      items: Array<{
+        id: string;
+        title: string;
+        thumbnailUrl: string | null;
+        visibility: string;
+        processingStatus: string;
+        viewCount: number;
+        likeCount: number;
+        commentCount: number;
+        createdAt: string;
+        publishedAt: string | null;
+        duration: number | null;
+      }>;
+      nextCursor: string | null;
+    }>("video", `/videos/me?${searchParams}`);
+  },
+
+  // GET /videos - Public feed
+  getFeed: (params?: { limit?: number; cursor?: string; sort?: "latest" | "popular" }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.limit) searchParams.set("limit", String(params.limit));
+    if (params?.cursor) searchParams.set("cursor", params.cursor);
+    if (params?.sort) searchParams.set("sort", params.sort);
+    return serviceCall<{
+      items: Array<{
+        id: string;
+        title: string;
+        thumbnailUrl: string;
+        viewCount: number;
+        publishedAt: string;
+        duration: number | null;
+        channelName: string;
+        channelHandle: string;
+        channelAvatarUrl: string | null;
+      }>;
+      nextCursor: string | null;
+    }>("video", `/videos?${searchParams}`);
+  },
+
+  // --- Upload Flow ---
+
+  // Initiate upload - Get presigned URL
+  initiateUpload: (filename: string) =>
+    serviceCall<{
+      videoId: string;
+      uploadUrl: string;
+      wsUrl: string;
+      expiresAt: string;
+    }>("video", "/videos/upload", {
+      method: "POST",
+      body: { fileName: filename },
+    }),
+
+  // Retry upload - Get new presigned URL
+  retryUpload: (videoId: string) =>
+    serviceCall<{
+      videoId: string;
+      uploadUrl: string;
+      wsUrl: string;
+      expiresAt: string;
+    }>("video", `/videos/upload/${videoId}/retry`, {
+      method: "POST",
+    }),
+
+  // Confirm upload complete (fallback if S3 event missed)
+  completeUpload: (videoId: string) =>
+    serviceCall<{ status: string }>("video", `/videos/upload/${videoId}/uploaded`, {
+      method: "POST",
+    }),
+};
+
+// -----------------------------------------------------------------------------
+// Playlist Service (video-service /playlists)
+// -----------------------------------------------------------------------------
+export const playlistService = {
+  // GET /playlists/me
+  getMyPlaylists: (params?: { limit?: number; cursor?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.limit) searchParams.set("limit", String(params.limit));
+    if (params?.cursor) searchParams.set("cursor", params.cursor);
+    return serviceCall<{
+      items: Array<{
+        id: string;
+        title: string;
+        description: string | null;
+        visibility: string;
+        thumbnailUrl: string | null;
+        videoCount: number;
+        updatedAt: string;
+        isSystem?: boolean;
+      }>;
+      nextCursor: string | null;
+    }>("video", `/playlists/me?${searchParams}`);
+  },
+
+  // POST /playlists
+  create: (data: { title: string; description?: string; visibility?: "PUBLIC" | "PRIVATE" | "UNLISTED" }) =>
+    serviceCall<{
+      id: string;
+      title: string;
+      description: string | null;
+      visibility: string;
+      videoCount: number;
+      createdAt: string;
+    }>("video", "/playlists", { method: "POST", body: data }),
+
+  // GET /playlists/:id
+  get: (id: string, publicView = true) => 
+    serviceCall<{
+      id: string;
+      title: string;
+      description: string | null;
+      visibility: string;
+      thumbnailUrl: string | null;
+      userId: string;
+      videoCount: number;
+      updatedAt: string;
+      videos: Array<{
+        id: string;
+        title: string;
+        thumbnailUrl: string | null;
+        channelName: string;
+        channelHandle: string;
+        viewCount: number;
+        duration: number | null;
+        publishedAt: string | null;
+        visibility: string;
+        position?: number;
+      }>;
+    }>("video", `/playlists/${id}`),
+
+  // PATCH /playlists/:id
+  update: (id: string, data: { title?: string; description?: string; visibility?: string }) =>
+    serviceCall("video", `/playlists/${id}`, { method: "PATCH", body: data }),
+
+  // DELETE /playlists/:id
+  delete: (id: string) =>
+    serviceCall("video", `/playlists/${id}`, { method: "DELETE" }),
+
+  // POST /playlists/:id/videos
+  addVideo: (id: string, videoId: string) =>
+    serviceCall<{ added: boolean; position: number }>("video", `/playlists/${id}/videos`, { method: "POST", body: { videoId } }),
+
+  // DELETE /playlists/:id/videos/:videoId
+  removeVideo: (id: string, videoId: string) =>
+    serviceCall("video", `/playlists/${id}/videos/${videoId}`, { method: "DELETE" }),
+  
+  // PATCH /playlists/:id/videos/reorder
+  reorderVideos: (id: string, videoIds: string[]) =>
+    serviceCall("video", `/playlists/${id}/videos/reorder`, { method: "PATCH", body: { videoIds } }),
+};
+
+// -----------------------------------------------------------------------------
+// Category Service (video-service /categories)
+// -----------------------------------------------------------------------------
+export const categoryService = {
+  // GET /categories
+  getAll: () =>
+    serviceCall<Array<{
+      id: string;
+      name: string;
+      slug: string;
+      iconUrl: string | null;
+    }>>("video", "/categories"),
+
+  // GET /categories/:slug
+  get: (slug: string) =>
+    serviceCall("video", `/categories/${slug}`),
+
+  // GET /categories/:slug/videos
+  getVideos: (slug: string, params?: { limit?: number; cursor?: string; sort?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.limit) searchParams.set("limit", String(params.limit));
+    if (params?.cursor) searchParams.set("cursor", params.cursor);
+    if (params?.sort) searchParams.set("sort", params.sort);
+    return serviceCall<{
+      category: { id: string; name: string };
+      items: Array<{
+        id: string;
+        title: string;
+        thumbnailUrl: string;
+        viewCount: number;
+        publishedAt: string;
+        duration: number | null;
+        channelName: string;
+        channelHandle: string;
+        channelAvatarUrl: string | null;
+      }>;
+      nextCursor: string | null;
+    }>("video", `/categories/${slug}/videos?${searchParams}`);
+  },
+};
+
+// -----------------------------------------------------------------------------
+// Engagement Service (engagement-service /api)
+// -----------------------------------------------------------------------------
+export const engagementService = {
+  // --- Reactions ---
+  
+  // POST /videos/:id/reaction - Toggle like/dislike
+  toggleReaction: (videoId: string, type: "LIKE" | "DISLIKE") =>
+    serviceCall<{
+      reaction: "LIKE" | "DISLIKE" | null;
+      likeCount: number;
+      dislikeCount: number;
+    }>("engagement", `/videos/${videoId}/reaction`, { method: "POST", body: { type } }),
+
+  // GET /videos/:id/reaction - Get my reaction
+  getMyReaction: (videoId: string) =>
+    serviceCall<{
+      reaction: "LIKE" | "DISLIKE" | null;
+    }>("engagement", `/videos/${videoId}/reaction`),
+
+  // --- Comments ---
+
+  // GET /videos/:id/comments - List comments
+  getComments: (videoId: string, params?: { limit?: number; cursor?: string; sort?: "NEWEST" | "POPULAR" }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.limit) searchParams.set("limit", String(params.limit));
+    if (params?.cursor) searchParams.set("cursor", params.cursor);
+    if (params?.sort) searchParams.set("sort", params.sort);
+    return serviceCall<{
+      items: Array<{
+        id: string;
+        content: string;
+        createdAt: string;
+        updatedAt: string;
+        isPinned: boolean;
+        isHearted: boolean;
+        likeCount: number;
+        replyCount: number;
+        userReaction: "LIKE" | null; // Engagement service might return this if implemented
+        author: {
+          id: string;
+          username: string;
+          displayName: string;
+          avatarUrl: string | null;
+          isVerified: boolean;
+          isChannelOwner: boolean; // Computed by service
+        };
+      }>;
+      nextCursor: string | null;
+    }>("engagement", `/videos/${videoId}/comments?${searchParams}`);
+  },
+
+  // POST /videos/:id/comments - Post comment
+  postComment: (videoId: string, content: string) =>
+    serviceCall("engagement", `/videos/${videoId}/comments`, { method: "POST", body: { content } }),
+
+  // DELETE /comments/:id - Delete comment
+  deleteComment: (commentId: string) =>
+    serviceCall("engagement", `/comments/${commentId}`, { method: "DELETE" }),
+
+  // --- Views ---
+
+  // POST /videos/:id/view - Record view
+  recordView: (videoId: string) =>
+    serviceCall("engagement", `/videos/${videoId}/view`, { method: "POST" }),
+};
+
+
+// -----------------------------------------------------------------------------
+// Feed Service (feed-service /api/feed)
+// -----------------------------------------------------------------------------
+export const feedService = {
+  // GET /api/feed/home - Home feed (currently alias for trending)
+  getHome: (params?: { limit?: number; cursor?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.limit) searchParams.set("limit", String(params.limit));
+    if (params?.cursor) searchParams.set("cursor", params.cursor);
+    const query = searchParams.toString();
+    
+    return serviceCall<{
+      videos: Array<{
+        id: string;
+        title: string;
+        thumbnailUrl: string;
+        viewCount: number;
+        publishedAt: string;
+        createdAt: string;
+        duration: number | null;
+        channelName: string;
+        channelHandle: string;
+        channelAvatarUrl: string | null;
+        likeCount: number;
+        commentCount: number;
+      }>;
+      nextCursor: string | null;
+    }>("feed", `/home${query ? `?${query}` : ""}`);
+  },
+
+  // GET /api/feed/trending
+  getTrending: (params?: { limit?: number; cursor?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.limit) searchParams.set("limit", String(params.limit));
+    if (params?.cursor) searchParams.set("cursor", params.cursor);
+    const query = searchParams.toString();
+    
+    return serviceCall<{
+      videos: Array<{
+        id: string;
+        title: string;
+        thumbnailUrl: string;
+        viewCount: number;
+        publishedAt: string;
+        createdAt: string;
+        duration: number | null;
+        channelName: string;
+        channelHandle: string;
+        channelAvatarUrl: string | null;
+        likeCount: number;
+        commentCount: number;
+      }>;
+      nextCursor: string | null;
+    }>("feed", `/trending${query ? `?${query}` : ""}`);
+  },
+
+  // GET /api/feed/subscriptions
+  getSubscriptions: (params?: { limit?: number; cursor?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.limit) searchParams.set("limit", String(params.limit));
+    if (params?.cursor) searchParams.set("cursor", params.cursor);
+    const query = searchParams.toString();
+    
+    return serviceCall<{
+      videos: Array<{
+        id: string;
+        title: string;
+        thumbnailUrl: string;
+        viewCount: number;
+        publishedAt: string;
+        createdAt: string;
+        duration: number | null;
+        channelName: string;
+        channelHandle: string;
+        channelAvatarUrl: string | null;
+        likeCount: number;
+        commentCount: number;
+      }>;
+      nextCursor: string | null;
+    }>("feed", `/subscriptions${query ? `?${query}` : ""}`);
+  },
+
+  // GET /api/feed/history
+  getHistory: (params?: { limit?: number; cursor?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.limit) searchParams.set("limit", String(params.limit));
+    if (params?.cursor) searchParams.set("cursor", params.cursor);
+    const query = searchParams.toString();
+    
+    return serviceCall<{
+      videos: Array<{
+        id: string;
+        title: string;
+        thumbnailUrl: string;
+        viewCount: number;
+        publishedAt: string;
+        createdAt: string;
+        duration: number | null;
+        channelName: string;
+        channelHandle: string;
+        channelAvatarUrl: string | null;
+        likeCount: number;
+        commentCount: number;
+        watchedAt?: string;
+        watchCount?: number;
+      }>;
+      nextCursor: string | null;
+    }>("feed", `/history${query ? `?${query}` : ""}`);
+  },
+};
+
+// -----------------------------------------------------------------------------
+// Search Service (search-service /api)
+// -----------------------------------------------------------------------------
+export const searchService = {
+  // GET /search
+  search: (query: string, params?: { page?: number; limit?: number; sort?: "relevancy" | "newest" | "popular" }) => {
+    const searchParams = new URLSearchParams();
+    searchParams.set("q", query);
+    if (params?.page) searchParams.set("page", String(params.page));
+    if (params?.limit) searchParams.set("limit", String(params.limit));
+    if (params?.sort) searchParams.set("sort", params.sort);
+
+    return serviceCall<{
+      hits: Array<{
+        id: string;
+        title: string;
+        description: string;
+        thumbnailUrl: string | null;
+        viewCount: number;
+        duration: number | null;
+        createdAt: number;
+        channelName: string;
+        channelHandle: string;
+        channelAvatarUrl: string | null;
+      }>;
+      estimatedTotalHits: number;
+      processingTimeMs: number;
+      page: number;
+      totalPages: number;
+    }>("search", `/search?${searchParams}`);
   },
 };
 

@@ -31,9 +31,8 @@ declare module "next-auth" {
   interface User extends AuthUser {}
 }
 
-const nextAuth = NextAuth({
-  ...authConfig,
-  providers: [
+// Define providers array explicitly to avoid type issues with concat
+const providers: any[] = [
     // Credentials provider (email OR username + password)
     Credentials({
       name: "credentials",
@@ -103,19 +102,30 @@ const nextAuth = NextAuth({
         };
       },
     }),
+];
 
-    // Google OAuth
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    }),
+// Conditional OAuth providers
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    providers.push(
+        Google({
+            clientId: process.env.GOOGLE_CLIENT_ID,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        })
+    );
+}
 
-    // GitHub OAuth
-    GitHub({
-      clientId: process.env.GITHUB_CLIENT_ID!,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
-    }),
-  ],
+if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
+    providers.push(
+        GitHub({
+            clientId: process.env.GITHUB_CLIENT_ID,
+            clientSecret: process.env.GITHUB_CLIENT_SECRET,
+        })
+    );
+}
+
+const nextAuth = NextAuth({
+  ...authConfig,
+  providers,
 
   callbacks: {
      // Extend the base callbacks with DB logic

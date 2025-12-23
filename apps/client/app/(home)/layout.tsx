@@ -8,16 +8,7 @@ import { SideNav } from "@/components/custom/sidenav";
 import { TopBar } from "@/components/top-bar/TopBar";
 import { SearchForm } from "@/components/top-bar/search-form";
 import { auth } from "@/lib/auth";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import Link from "next/link";
+import { UserNav } from "@/components/top-bar/user-nav";
 import { ThemeToggle } from "@/components/custom/theme-toggle";
 
 export default async function MainLayout({
@@ -39,51 +30,7 @@ export default async function MainLayout({
           <SearchForm/>
           <ThemeToggle/>
           {session?.user && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-full">
-                  <Avatar className="w-8 h-8">
-                    <AvatarImage src={session.user.avatarUrl ?? undefined} />
-                    <AvatarFallback>
-                      {session.user.displayName?.charAt(0).toUpperCase() ?? "U"}
-                    </AvatarFallback>
-                  </Avatar>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <div className="px-2 py-1.5">
-                  <p className="text-sm font-medium">{session.user.displayName}</p>
-                  <p className="text-xs text-muted-foreground">@{session.user.username}</p>
-                </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href={`/u/${session.user.username}`}>
-                    <IconUser className="mr-2 h-4 w-4" />
-                    View Profile
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/settings">
-                    <IconSettings className="mr-2 h-4 w-4" />
-                    Settings
-                  </Link>
-                </DropdownMenuItem>
-                {session.user.role === "ADMIN" && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem asChild>
-                      <Link href="/admin" className="text-primary">
-                        Admin Dashboard
-                      </Link>
-                    </DropdownMenuItem>
-                  </>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href="/api/auth/signout">Sign out</Link>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <UserNav user={session.user} />
           )}
         </TopBar>
           {children}

@@ -3,6 +3,7 @@ import { prisma } from "@repo/database";
 
 const QUEUE_NAME = "feed-service-video-queue";
 const EXCHANGE_NAME = "video.events"; // Defined in @repo/events
+import { refreshTrendingCache } from "../jobs/trending.js";
 
 export const startVideoConsumer = async (channel: Channel) => {
   await channel.assertExchange(EXCHANGE_NAME, "topic", { durable: true });
@@ -49,6 +50,8 @@ export const startVideoConsumer = async (channel: Channel) => {
         if (video && video.visibility === "PUBLIC") {
           // Could trigger feed cache invalidation or update
           console.log(`✅ Video ${videoId} ready for feeds`);
+          // Refresh trending cache immediately
+          refreshTrendingCache().catch(err => console.error("Failed to refresh trending:", err));
         }
 
       } else if (routingKey === "video.deleted") {

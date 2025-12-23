@@ -75,10 +75,7 @@ export const transcodeVideo = (options: TranscodeOptions): Promise<TranscodeResu
 
     let command = ffmpeg(inputPath);
 
-    // Apply timeout if specified
-    if (timeout) {
-      (command as any).timeout(timeout); 
-    }
+    // Timeout handled by BullMQ worker
     
     // Add each resolution as an output
     for (const res of resolutions) {

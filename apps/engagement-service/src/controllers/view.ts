@@ -20,7 +20,7 @@ export const recordView = async (req: Request, res: Response) => {
       emitVideoViewed(videoId, userId);
     }
 
-    res.json({ success: true, counted });
+    res.json({ success: true, data: { counted } });
   } catch (error) {
     console.error("View Record Error:", error);
     res.status(500).json({ error: "Internal Server Error" });

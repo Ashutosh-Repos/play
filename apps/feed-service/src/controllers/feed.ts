@@ -28,7 +28,7 @@ export const getTrendingFeed = async (req: Request, res: Response) => {
         let videos: any[] = [];
         if (cachedIds.length > 0) {
             const unordered = await prisma.video.findMany({
-                where: { id: { in: cachedIds }, visibility: "PUBLIC" },
+                where: { id: { in: cachedIds }, visibility: "PUBLIC", processingStatus: "READY" },
                 include: { channel: true }
             });
             const map = new Map(unordered.map((v: typeof unordered[0]) => [v.id, v]));
@@ -36,7 +36,7 @@ export const getTrendingFeed = async (req: Request, res: Response) => {
         } else if (start === 0) {
              // Fallback only if first page
             videos = await prisma.video.findMany({
-                where: { visibility: "PUBLIC" },
+                where: { visibility: "PUBLIC", processingStatus: "READY" },
                 orderBy: { viewCount: "desc" },
                 take: limit,
                 include: { channel: true }
@@ -45,11 +45,27 @@ export const getTrendingFeed = async (req: Request, res: Response) => {
             videos = [];
         }
         
-        const nextCursor = videos && videos.length === limit ? start + limit : null;
-        res.json({ videos, nextCursor });
+        // Transform to match client expectations
+        const transformedVideos = videos.map(v => ({
+            id: v.id,
+            title: v.title,
+            thumbnailUrl: v.thumbnailUrl,
+            viewCount: Number(v.viewCount),
+            publishedAt: v.publishedAt?.toISOString() || v.createdAt.toISOString(),
+            createdAt: v.createdAt.toISOString(),
+            duration: v.duration,
+            channelName: v.channel.displayName,
+            channelHandle: v.channel.handle,
+            channelAvatarUrl: v.channel.avatarUrl,
+            likeCount: v.likeCount,
+            commentCount: v.commentCount
+        }));
+        
+        const nextCursor = transformedVideos && transformedVideos.length === limit ? start + limit : null;
+        res.json({ success: true, data: { videos: transformedVideos, nextCursor } });
     } catch (error) {
         console.error("Trending Error", error);
-        res.status(500).json({ error: "Internal Error" });
+        res.status(500).json({ success: false, error: { code: "INTERNAL_ERROR", message: "Internal Error" } });
     }
 };
 
@@ -75,13 +91,14 @@ export const getSubscriptionFeed = async (req: Request, res: Response) => {
         const channelIds = subscriptions.map((s: { channelId: string }) => s.channelId);
 
         if (channelIds.length === 0) {
-            return res.json({ videos: [], nextCursor: null });
+            return res.json({ success: true, data: { videos: [], nextCursor: null } });
         }
 
         const videos = await prisma.video.findMany({
             where: { 
                 channelId: { in: channelIds },
-                visibility: "PUBLIC"
+                visibility: "PUBLIC",
+                processingStatus: "READY"
             },
             orderBy: { createdAt: "desc" },
             take: limit + 1, // Fetch 1 extra to check next
@@ -96,10 +113,26 @@ export const getSubscriptionFeed = async (req: Request, res: Response) => {
             nextCursor = nextItem?.id;
         }
 
-        res.json({ videos, nextCursor });
+        // Transform to match client expectations
+        const transformedVideos = videos.map(v => ({
+            id: v.id,
+            title: v.title,
+            thumbnailUrl: v.thumbnailUrl,
+            viewCount: Number(v.viewCount),
+            publishedAt: v.publishedAt?.toISOString() || v.createdAt.toISOString(),
+            createdAt: v.createdAt.toISOString(),
+            duration: v.duration,
+            channelName: v.channel.displayName,
+            channelHandle: v.channel.handle,
+            channelAvatarUrl: v.channel.avatarUrl,
+            likeCount: v.likeCount,
+            commentCount: v.commentCount
+        }));
+
+        res.json({ success: true, data: { videos: transformedVideos, nextCursor } });
     } catch (error) {
          console.error("Subs Feed Error", error);
-         res.status(500).json({ error: "Internal Error" });
+         res.status(500).json({ success: false, error: { code: "INTERNAL_ERROR", message: "Internal Error" } });
     }
 };
 
@@ -138,17 +171,28 @@ export const getHistoryFeed = async (req: Request, res: Response) => {
             nextCursor = nextItem?.id;
         }
 
-        // Flatten structure
-        const videos = history.map((h: typeof history[0]) => ({
-            ...h.video,
-            watchedAt: h.lastWatchedAt,
+        // Flatten structure and transform
+        const transformedVideos = history.map((h: typeof history[0]) => ({
+            id: h.video.id,
+            title: h.video.title,
+            thumbnailUrl: h.video.thumbnailUrl,
+            viewCount: Number(h.video.viewCount),
+            publishedAt: h.video.publishedAt?.toISOString() || h.video.createdAt.toISOString(),
+            createdAt: h.video.createdAt.toISOString(),
+            duration: h.video.duration,
+            channelName: h.video.channel.displayName,
+            channelHandle: h.video.channel.handle,
+            channelAvatarUrl: h.video.channel.avatarUrl,
+            likeCount: h.video.likeCount,
+            commentCount: h.video.commentCount,
+            watchedAt: h.lastWatchedAt.toISOString(),
             watchCount: h.watchCount
         }));
 
-        res.json({ videos, nextCursor });
+        res.json({ success: true, data: { videos: transformedVideos, nextCursor } });
     } catch (error) {
          console.error("History Feed Error", error);
-         res.status(500).json({ error: "Internal Error" });
+         res.status(500).json({ success: false, error: { code: "INTERNAL_ERROR", message: "Internal Error" } });
     }
 };
 

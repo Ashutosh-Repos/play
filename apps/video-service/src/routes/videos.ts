@@ -14,8 +14,77 @@ import {
   emitVideoUpdated,
   processOutboxItem,
 } from "../events/publisher.js";
+import { getFileUrl } from "../lib/storage.js";
 
 const router = Router();
+
+// GET /videos - Public video feed
+router.get("/", async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 50);
+    const cursor = req.query.cursor as string | undefined;
+    const sort = (req.query.sort as string) || "latest"; // latest, popular
+
+    const orderBy = 
+      sort === "popular" 
+        ? [{ viewCount: "desc" as const }, { id: "desc" as const }]
+        : [{ createdAt: "desc" as const }, { id: "desc" as const }];
+
+    const videos = await prisma.video.findMany({
+      where: {
+        visibility: "PUBLIC",
+        processingStatus: "READY",
+        deletedAt: null,
+      },
+      take: limit + 1,
+      ...(cursor && { cursor: { id: cursor }, skip: 1 }),
+      orderBy,
+      select: {
+        id: true,
+        title: true,
+        thumbnailUrl: true,
+        duration: true,
+        viewCount: true,
+        publishedAt: true,
+        createdAt: true,
+        channelName: true,
+        channelHandle: true,
+        channelAvatarUrl: true,
+        channel: {
+            select: {
+                id: true,
+                handle: true,
+                displayName: true,
+                avatarUrl: true
+            }
+        }
+      },
+    });
+
+    const hasMore = videos.length > limit;
+    const rawItems = hasMore ? videos.slice(0, -1) : videos;
+
+    const items = rawItems.map(v => ({
+      ...v,
+      thumbnailUrl: getFileUrl(v.thumbnailUrl),
+      channelAvatarUrl: getFileUrl(v.channelAvatarUrl || v.channel.avatarUrl)
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        items,
+        nextCursor: hasMore ? rawItems[rawItems.length - 1]?.id : null,
+      },
+    });
+  } catch (error) {
+    console.error("Get public feed error:", error);
+    res.status(500).json({
+      success: false,
+      error: { code: "INTERNAL_ERROR", message: "Failed to get feed" },
+    });
+  }
+});
 
 // POST /videos - Create video draft
 router.post("/", authMiddleware(), async (req, res) => {
@@ -140,13 +209,19 @@ router.get("/me", authMiddleware(), async (req, res) => {
     });
 
     const hasMore = videos.length > limit;
-    const items = hasMore ? videos.slice(0, -1) : videos;
+    const rawItems = hasMore ? videos.slice(0, -1) : videos;
+    
+    // Transform items
+    const items = rawItems.map(v => ({
+      ...v,
+      thumbnailUrl: getFileUrl(v.thumbnailUrl)
+    }));
 
     res.json({
       success: true,
       data: {
         items,
-        nextCursor: hasMore ? items[items.length - 1]?.id : null,
+        nextCursor: hasMore ? rawItems[rawItems.length - 1]?.id : null,
       },
     });
   } catch (error) {
@@ -200,7 +275,7 @@ router.get("/:id/status", authMiddleware(), async (req, res) => {
         status: video.processingStatus,
         progress: video.processingProgress,
         error: video.processingError,
-        thumbnailOptions: video.thumbnailOptions,
+        thumbnailOptions: video.thumbnailOptions.map(t => getFileUrl(t)),
         canPublish,
       },
     });
@@ -214,7 +289,7 @@ router.get("/:id/status", authMiddleware(), async (req, res) => {
 });
 
 // GET /videos/:id - Get video (public)
-router.get("/:id", async (req, res) => {
+router.get("/:id", authMiddleware({ required: false }), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -239,6 +314,7 @@ router.get("/:id", async (req, res) => {
         allowComments: true,
         allowEmbedding: true,
         isAgeRestricted: true,
+        previewSprite: true,
         publishedAt: true,
         createdAt: true,
         channelHandle: true,
@@ -247,6 +323,7 @@ router.get("/:id", async (req, res) => {
         channel: {
           select: {
             id: true,
+            userId: true,
             handle: true,
             displayName: true,
             avatarUrl: true,
@@ -272,15 +349,38 @@ router.get("/:id", async (req, res) => {
     }
 
     // Check visibility
-    if (video.visibility === "PRIVATE") {
-      // Would need auth to check ownership - for now return 404
-      return res.status(404).json({
-        success: false,
-        error: { code: "NOT_FOUND", message: "Video not found" },
-      });
+    // SCHEDULED videos should be treated as PRIVATE until they are published (handled by scheduler or if checks publishedAt)
+    // Actually, SCHEDULED status exists in enum.
+    if (video.visibility === "PRIVATE" || video.visibility === "SCHEDULED" || video.visibility === "UNLISTED") {
+      // Check ownership if user is logged in
+      const userId = req.user?.sub;
+      const isOwner = userId && video.channel.userId === userId;
+
+      if (!isOwner) {
+         // PRIVATE and SCHEDULED are owner-only
+         if (video.visibility === "PRIVATE" || video.visibility === "SCHEDULED") {
+             return res.status(404).json({
+                success: false,
+                error: { code: "NOT_FOUND", message: "Video not found" },
+             });
+         }
+         // Unlisted is accessible to anyone with the link/ID, so fall through
+      }
     }
 
-    res.json({ success: true, data: video });
+    // Transform keys to URLs
+    const videoWithUrls = {
+      ...video,
+      hlsPlaylistUrl: getFileUrl(video.hlsPlaylistUrl),
+      thumbnailUrl: getFileUrl(video.thumbnailUrl),
+      previewSprite: getFileUrl(video.previewSprite),
+      channel: {
+        ...video.channel,
+        avatarUrl: getFileUrl(video.channel.avatarUrl),
+      }
+    };
+
+    res.json({ success: true, data: videoWithUrls });
   } catch (error) {
     console.error("Get video error:", error);
     res.status(500).json({
